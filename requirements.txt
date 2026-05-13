@@ -1,0 +1,285 @@
+# CPNA — Clinical Pediatric Nutrition Assistant
+# Requirements (pinned from rag_env — archived project environment)
+#
+# Usage:
+#   .venv\Scripts\activate        # Windows
+#   source .venv/bin/activate     # Linux/macOS
+#   pip install -r requirements.txt
+#
+# Source environment: rag_env/ (from archived project)
+# Python: 3.11.4
+# Last updated: 2026-04-14
+
+# ──────────────────────────────────────────────────────────────
+# Core ML / Embeddings / Transformers
+# ──────────────────────────────────────────────────────────────
+
+torch==2.5.1
+transformers==4.47.1
+tokenizers==0.21.4
+safetensors==0.5.3
+sentence-transformers==3.3.1
+accelerate==1.9.0
+
+# ──────────────────────────────────────────────────────────────
+# Data / Numerics
+# ──────────────────────────────────────────────────────────────
+
+numpy==1.26.4
+pandas==2.3.1
+pytz==2025.2
+tzdata==2025.2
+scipy==1.16.1
+scikit-learn==1.7.1
+joblib==1.5.1
+threadpoolctl==3.6.0
+
+# ──────────────────────────────────────────────────────────────
+# Diet Optimization
+# ──────────────────────────────────────────────────────────────
+
+PuLP==2.9.0
+
+# ──────────────────────────────────────────────────────────────
+# PDF / Document Processing
+# ──────────────────────────────────────────────────────────────
+
+pypdf==4.1.0
+PyPDF2==3.0.1
+pypdfium2==4.30.0
+pdfplumber==0.11.7
+pdfminer.six==20250506
+pdf2image==1.17.0
+PyMuPDF==1.26.3
+pytesseract==0.3.13
+tesseract==0.1.3
+beautifulsoup4==4.13.4
+bs4==0.0.2
+soupsieve==2.7
+EbookLib==0.19
+lxml==6.0.0
+
+# ──────────────────────────────────────────────────────────────
+# LangChain — Orchestration / RAG Pipeline
+# ──────────────────────────────────────────────────────────────
+
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-core==0.3.63
+langchain-huggingface==0.1.2
+langchain-text-splitters==0.3.8
+langsmith==0.2.11
+dataclasses-json==0.6.7
+marshmallow==3.26.1
+typing-inspect==0.9.0
+tenacity==9.0.0
+SQLAlchemy==2.0.42
+greenlet==3.2.3
+httpx-sse==0.4.1
+requests-toolbelt==1.0.0
+
+# ──────────────────────────────────────────────────────────────
+# Vector Search (Local)
+# ──────────────────────────────────────────────────────────────
+
+faiss-cpu==1.9.0
+rank-bm25==0.2.2
+
+# ──────────────────────────────────────────────────────────────
+# API / Web Server (Phase 5+)
+# ──────────────────────────────────────────────────────────────
+
+fastapi==0.115.6
+uvicorn==0.34.0
+starlette==0.41.3
+python-multipart==0.0.20
+python-dotenv==1.0.0
+pydantic==2.11.7
+pydantic_core==2.33.2
+pydantic-settings==2.10.1
+annotated-types==0.7.0
+typing-inspection==0.4.1
+
+# ──────────────────────────────────────────────────────────────
+# UI (Optional — Streamlit / Gradio for prototyping)
+# ──────────────────────────────────────────────────────────────
+
+streamlit==1.48.0
+gradio==5.49.1
+gradio_client==1.13.3
+pydeck==0.9.1
+altair==5.5.0
+narwhals==2.0.1
+pyarrow==21.0.0
+pydub==0.25.1
+ffmpy==0.6.3
+safehttpx==0.1.6
+semantic-version==2.10.0
+shellingham==1.5.4
+tomlkit==0.13.3
+aiofiles==24.1.0
+flask-cors==6.0.1
+Flask==3.1.1
+Werkzeug==3.1.3
+itsdangerous==2.2.0
+click==8.1.8
+blinker==1.9.0
+colorama==0.4.6
+watchdog==6.0.0
+
+# ──────────────────────────────────────────────────────────────
+# HTTP / Async
+# ──────────────────────────────────────────────────────────────
+
+httpx==0.28.1
+httpcore==1.0.9
+h11==0.16.0
+aiohttp==3.12.15
+aiohappyeyeballs==2.6.1
+aiosignal==1.4.0
+frozenlist==1.7.0
+multidict==6.6.3
+yarl==1.20.1
+propcache==0.3.2
+sniffio==1.3.1
+anyio==4.9.0
+idna==3.10
+watchfiles==1.1.0
+httptools==0.6.4
+urllib3==2.5.0
+certifi==2025.7.14
+charset-normalizer==3.4.2
+requests==2.31.0
+zstandard==0.23.0
+
+# ──────────────────────────────────────────────────────────────
+# HuggingFace Hub
+# ──────────────────────────────────────────────────────────────
+
+huggingface-hub==0.34.3
+hf-xet==1.1.5
+filelock==3.18.0
+fsspec==2025.7.0
+tqdm==4.67.1
+packaging==24.2
+regex==2025.7.34
+
+# ──────────────────────────────────────────────────────────────
+# Visualization / Display
+# ──────────────────────────────────────────────────────────────
+
+pillow==11.3.0
+rich==14.1.0
+Pygments==2.19.2
+markdown-it-py==4.0.0
+mdurl==0.1.2
+
+# ──────────────────────────────────────────────────────────────
+# Git / Version Tracking
+# ──────────────────────────────────────────────────────────────
+
+GitPython==3.1.45
+gitdb==4.0.12
+smmap==5.0.12
+
+# ──────────────────────────────────────────────────────────────
+# JSON / Schema
+# ──────────────────────────────────────────────────────────────
+
+jsonschema==4.25.0
+jsonschema-specifications==2025.4.1
+referencing==0.36.2
+rpds-py==0.26.0
+jsonpatch==1.33
+jsonpointer==3.0.0
+
+# ──────────────────────────────────────────────────────────────
+# Testing / Dev Tools
+# ──────────────────────────────────────────────────────────────
+
+pytest==8.4.1
+pytest-asyncio==1.2.0
+pytest-cov==7.0.0
+pytest-mock==3.15.1
+pluggy==1.6.0
+iniconfig==2.1.0
+coverage==7.10.7
+ruff==0.14.0
+
+# ──────────────────────────────────────────────────────────────
+# Platform / System
+# ──────────────────────────────────────────────────────────────
+
+pywin32==311
+cffi==1.17.1
+pycparser==2.22
+cryptography==45.0.5
+platformdirs==4.3.8
+psutil==7.0.0
+eval_type_backport==0.2.2
+Brotli==1.1.0
+
+# ──────────────────────────────────────────────────────────────
+# Notebook / IPython (Interactive Development)
+# ──────────────────────────────────────────────────────────────
+
+ipykernel==6.30.1
+ipython==9.4.0
+ipython_pygments_lexers==1.1.1
+jupyter_client==8.6.3
+jupyter_core==5.8.1
+tornado==6.5.1
+pyzmq==27.0.1
+comm==0.2.3
+debugpy==1.8.16
+traitlets==5.14.3
+parso==0.8.4
+prompt_toolkit==3.0.51
+wcwidth==0.2.13
+stack-data==0.6.3
+asttokens==3.0.0
+executing==2.2.0
+pure_eval==0.2.3
+jedi==0.19.2
+decorator==5.2.1
+matplotlib-inline==0.1.7
+nest-asyncio==1.6.0
+
+# ──────────────────────────────────────────────────────────────
+# Template / Config
+# ──────────────────────────────────────────────────────────────
+
+Jinja2==3.1.6
+MarkupSafe==3.0.2
+PyYAML==6.0.2
+toml==0.10.2
+tabulate==0.9.0
+typer==0.15.4
+
+# ──────────────────────────────────────────────────────────────
+# External APIs (Optional — Together AI, etc.)
+# ──────────────────────────────────────────────────────────────
+
+together==1.5.26
+pybreaker==1.2.0
+protobuf==6.31.1
+
+# ──────────────────────────────────────────────────────────────
+# Misc / Transitive
+# ──────────────────────────────────────────────────────────────
+
+cachetools==6.1.0
+groovy==0.1.2
+python-dateutil==2.9.0.post0
+six==1.17.0
+mypy_extensions==1.1.0
+typing_extensions==4.14.1
+
+
+# CPNA v1 additions
+redis
+fakeredis
+qdrant-client
+structlog
+prometheus-client
+anthropic

@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+*.dylib
+
+# Virtual environments
+rag_env/
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Logs
+*.log
+logs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/.env.local
+frontend/.env*.local
+
+# Model artifacts (large binary files)
+app/models/intent_classifier/embedding_model/
+app/models/intent_classifier/*.pkl
+app/models/intent_classifier/*.json
+
+# Knowledge base source documents (large PDFs/EPUBs — store separately)
+app/common/data/*.pdf
+app/common/data/*.PDF
+app/common/data/*.epub
+
+# Internal tool state
+.claude/
+.qwen/
+
+# Qdrant / Vector store data
+qdrant_data/
+*.qdrant
+
+# Redis dump
+dump.rdb
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini

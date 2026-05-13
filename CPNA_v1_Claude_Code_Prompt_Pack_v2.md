@@ -1,0 +1,1297 @@
+# CPNA v1 — Claude Code Prompt Pack (v2)
+**Agentic RAG Clinical Pediatric Nutrition Assistant**
+*Rebuilt to integrate with existing codebase. Zero redundancy. Zero clashes.*
+
+---
+
+## Before You Begin — Read This
+
+Your project already contains the following files. Every prompt in this pack has been written to **wrap, extend, or wire** these — never to rewrite them:
+
+| Existing File | Role in CPNA v1 | How It's Used |
+|---|---|---|
+| `app/common/chapter_extractor.py` | Splits knowledge source documents into passage chunks | Feeds BM25 corpus and Qdrant ingestion pipeline |
+| `app/common/metadata_enricher.py` | Attaches source type, condition tags, and provenance to passages | Produces `RetrievedPassage.source_type` and `source_title` |
+| `app/common/nutrient_calculator.py` | Core nutrient computation logic | Wrapped by `DeterministicNutrientEngine` — not replaced |
+| `app/common/pdf_loader.py` | Loads and parses PDF knowledge sources | Called before `chapter_extractor` in ingestion pipeline |
+| `app/models/intent_classifier` | Trained DistilBERT intent model (directory) | Wrapped by `IntentClassifier` service — not retrained |
+| `app/training` | Training scripts and data | Referenced only — do not modify during build |
+| `rag_env` | Virtual environment | Activate before every Claude Code session |
+| `requirements.txt` | Existing dependencies | Extend with new deps, never overwrite |
+
+**Rules for every prompt:**
+- Always read the relevant existing file(s) **before** writing any new code in that area
+- When wrapping an existing module, import it — don't copy its logic
+- When extending `requirements.txt`, append only — check for conflicts first
+- All new files live under `app/` to stay consistent with existing structure
+- `rag_env` is your active venv — all `pip install` calls must target it
+
+---
+
+## Prompt 0 — CLAUDE.md Master Context File
+
+> **Run this first. Feed it to Claude Code before any other prompt.**
+
+```
+Create a CLAUDE.md file at the project root. This is the persistent context document for the entire CPNA v1 build. It must contain exactly the following sections:
+
+---
+
+## Project Identity
+Product: Agentic RAG Clinical Pediatric Nutrition Assistant (CPNA) v1
+Stack: Python backend (FastAPI), Next.js 14 frontend (App Router, TypeScript), PostgreSQL, Redis, Qdrant (vector store), HuggingFace DistilBERT for intent classification
+Architecture: Agentic RAG with deterministic therapy engine, multi-agent orchestration, hybrid retrieval (vector + BM25), structured conversation state management
+Active venv: rag_env (always activate before running or installing)
+
+## EXISTING FILES — DO NOT REWRITE THESE
+The following files already exist and are functional. Every agent and workflow must import from them rather than re-implementing their logic:
+
+- app/common/pdf_loader.py
+    Loads and parses PDF knowledge source documents.
+    Use for: ingestion pipeline document loading.
+
+- app/common/chapter_extractor.py
+    Splits loaded documents into passage chunks by chapter or section.
+    Use for: producing List[Passage] fed to both Qdrant ingestion and BM25 corpus.
+
+- app/common/metadata_enricher.py
+    Attaches source_type (CLINICAL_REF | DRI_TABLE | FOOD_COMP | DRUG_NUTRIENT | CASE_STUDY),
+    source_title, condition_tags, and provenance to each passage.
+    Use for: producing RetrievedPassage metadata fields.
+
+- app/common/nutrient_calculator.py
+    Contains core nutrient computation functions.
+    Use for: DRI baseline lookup and deterministic target computation.
+    The DeterministicNutrientEngine wraps this — it does NOT reimplement it.
+
+- app/models/intent_classifier/
+    Directory containing a fine-tuned DistilBERT intent classification model.
+    Use for: loading via HuggingFace pipeline inside IntentClassifier service.
+    Labels expected: THERAPY, RECOMMENDATION, COMPARISON, GENERAL.
+    Do not retrain during build.
+
+- app/training/
+    Training scripts and labelled data. Reference only. Do not modify.
+
+## Core Design Rules
+- The UI consumes ONLY normalized display-safe response contracts. Raw orchestration objects must NEVER reach the frontend.
+- Therapy outputs require a gatekeeper pass. If required slots are missing and cannot be resolved, downgrade to RECOMMENDATION — never hallucinate personalized values.
+- Intent classification uses the existing model at app/models/intent_classifier. Low-confidence results (<0.70) must NOT route silently — trigger clarification or fallback.
+- Conversation state has four buckets: session_memory, active_task_context, turn_entities, inherited_context. Never conflate them.
+- Context inheritance is selective. A new comparison query after therapy must NOT silently inherit patient data.
+- Loose replies ("yes", "8 years", "the first one") are resolved using last_assistant_prompt_type + workflow_stage + pending_slots — never guessed.
+- Therapy targets must trace to the deterministic engine (wrapping nutrient_calculator.py) or DRI tables. Not LLM generation.
+- Debug traces, internal fields, and machine field names must never appear in UI output.
+
+## Supported Query Types
+THERAPY | RECOMMENDATION | COMPARISON | GENERAL
+
+## Supported Therapy Conditions (v1)
+Type 1 diabetes, Cystic fibrosis, Food allergy, Preterm nutrition, Chronic kidney disease, PKU, MSUD, Galactosemia, Epilepsy/ketogenic therapy, IBD, GERD
+
+## Required Slots for Therapy
+age, sex, weight, height, diagnosis, medications, biomarkers, country
+
+## Retrieval Pipeline (mandatory order)
+User query → LLM query rewriting → vector search top 20 → BM25 search top 20 → merge + deduplicate → rerank → top 7 contexts
+Note: BM25 corpus and Qdrant index are populated from pdf_loader → chapter_extractor → metadata_enricher pipeline.
+
+## Response Contracts (canonical shapes)
+Defined in app/contracts/response_contracts.py — always import from here, never redefine inline.
+
+## State Model
+Defined in app/state/conversation_state.py — single source of truth. Never pass raw dicts as state.
+
+## Directory Layout (existing + new)
+app/
+  common/          ← EXISTING — pdf_loader, chapter_extractor, metadata_enricher, nutrient_calculator
+  models/          ← EXISTING — intent_classifier/
+  training/        ← EXISTING — do not touch
+  agents/          ← NEW
+  state/           ← NEW
+  classification/  ← NEW (wraps app/models/intent_classifier)
+  retrieval/       ← NEW (uses app/common/* for ingestion)
+  engine/          ← NEW (wraps app/common/nutrient_calculator)
+  contracts/       ← NEW
+  workflows/       ← NEW
+  knowledge_graph/ ← NEW
+  api/             ← NEW
+  observability/   ← NEW
+  tests/           ← NEW
+
+## Non-Goals (v1)
+No role-based UX, no EMR integration, no clinician permissions, no autonomous treatment without required data, no noisy button-driven flows
+
+## Test Commands
+Unit: pytest app/tests/unit
+Integration: pytest app/tests/integration
+E2E: pytest app/tests/e2e
+---
+
+After writing CLAUDE.md, confirm: "CLAUDE.md written. Existing files mapped. Project context is locked."
+```
+
+**Checkpoint:** `cat CLAUDE.md | grep "EXISTING FILES" ` — should return the section header.
+
+---
+
+## Prompt 1 — Audit Existing Files + Scaffold Delta
+
+> `[CLAUDE.md REQUIRED]`
+> This prompt reads existing files before touching anything. Run it before any scaffold work.
+
+```
+Read CLAUDE.md fully before proceeding.
+
+Step 1 — Audit existing files. Read each of the following and produce a brief summary of what each currently implements. Do not modify any of them.
+
+Read and summarize:
+1. app/common/pdf_loader.py — what document types does it handle? What does it return?
+2. app/common/chapter_extractor.py — what is its input/output contract? What chunk structure does it produce?
+3. app/common/metadata_enricher.py — what fields does it attach? What is its output schema?
+4. app/common/nutrient_calculator.py — what functions/methods does it expose? What inputs and outputs?
+5. app/models/intent_classifier/ — list all files. Identify config.json, tokenizer files, and any label mappings.
+
+Print a summary table:
+| File | Key functions/classes | Input | Output | Notes |
+
+Step 2 — Scaffold only the directories and files that do NOT yet exist. Create placeholder __init__.py files. Do not create any file that already exists.
+
+New directories and files to create under app/:
+
+app/
+  agents/
+    __init__.py
+    intent_agent.py
+    query_rewrite_agent.py
+    slot_filling_agent.py
+    therapy_gatekeeper_agent.py
+    retrieval_agent.py
+    reranking_agent.py
+    kg_retrieval_agent.py
+    comparison_router_agent.py
+    response_synthesis_agent.py
+  state/
+    __init__.py
+    conversation_state.py
+    state_manager.py
+  classification/
+    __init__.py
+    intent_classifier.py       ← wraps app/models/intent_classifier — NOT a new model
+    intent_labels.py
+  retrieval/
+    __init__.py
+    vector_retrieval.py
+    bm25_retrieval.py
+    hybrid_merger.py
+    reranker.py
+    ingestion_pipeline.py      ← orchestrates pdf_loader → chapter_extractor → metadata_enricher → index
+  engine/
+    __init__.py
+    deterministic_nutrient_engine.py  ← wraps nutrient_calculator.py
+    dri_lookup.py
+    condition_adjustments.py
+    drug_nutrient_interactions.py
+    food_source_mapper.py
+    meal_plan_generator.py
+  contracts/
+    __init__.py
+    response_contracts.py
+    display_adapter.py
+  workflows/
+    __init__.py
+    therapy_workflow.py
+    recommendation_workflow.py
+    comparison_workflow.py
+    general_workflow.py
+    workflow_router.py
+  knowledge_graph/
+    __init__.py
+    kg_client.py
+    case_study_schema.py
+  api/
+    __init__.py
+    router.py
+    schemas.py
+  observability/
+    __init__.py
+    logger.py
+    metrics.py
+  tests/
+    __init__.py
+    unit/
+      __init__.py
+    integration/
+      __init__.py
+    e2e/
+      __init__.py
+    fixtures/
+      __init__.py
+
+Also create at project root:
+  frontend/   (Next.js 14 app — scaffold only, no implementation yet)
+    src/app/layout.tsx
+    src/app/page.tsx
+    src/components/.gitkeep
+    src/lib/types.ts
+    src/hooks/.gitkeep
+    package.json
+    tsconfig.json
+
+Step 3 — Check requirements.txt for existing deps.
+Read requirements.txt and print its current contents.
+Then append the following NEW dependencies only if they are not already present.
+Do NOT overwrite or reorder existing entries. Append at the bottom under a comment "# CPNA v1 additions":
+
+fastapi
+uvicorn[standard]
+redis
+fakeredis
+qdrant-client
+rank_bm25
+sentence-transformers
+structlog
+prometheus-client
+httpx
+pytest
+pytest-asyncio
+anthropic
+pydantic>=2.0
+
+After completing all three steps, print:
+"Audit complete. Delta scaffold created. requirements.txt extended without conflicts. Ready for implementation prompts."
+```
+
+**Checkpoint:** `find app/ -name "*.py" | sort | wc -l` — should show more files than before, all existing files preserved.
+
+---
+
+## Prompt 2 — Conversation State Model
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md fully before proceeding. Pay specific attention to the "EXISTING FILES" section and the "State Model" note.
+
+Implement app/state/conversation_state.py.
+
+This is the canonical state model. Every agent reads and writes state through this — never via raw dicts.
+
+1. At the top of the file, add:
+   # This is the canonical conversation state model for CPNA v1.
+   # Do not import from app/common/* here — state has no dependency on retrieval or computation modules.
+
+2. Define the following enums in app/state/conversation_state.py:
+
+   IntentLabel: THERAPY | RECOMMENDATION | COMPARISON | GENERAL
+   ComparisonSubtype: FOOD_VS_FOOD | NUTRIENT_VS_NUTRIENT | DIET_VS_DIET | STRATEGY_VS_STRATEGY
+
+3. Define sub-models (all Pydantic BaseModel, all strict typing — no Optional[Any], no raw dicts):
+
+   SessionMemory: confirmed_diagnosis, confirmed_age, confirmed_country, confirmed_sex — all Optional[str]
+
+   ActiveTaskContext: current_intent (Optional[IntentLabel]), workflow_stage (str default "idle"),
+     pending_slots (List[str] default []), comparison_subtype (Optional[ComparisonSubtype]),
+     therapy_downgrade_status (bool default False)
+
+   TurnEntities: age_mentioned (Optional[str]), compared_entities (List[str] default []),
+     biomarkers_mentioned (Optional[dict]), country_mentioned (Optional[str]),
+     diagnosis_mentioned (Optional[str])
+
+   InheritedContext: fields (List[str] default []), source_turn_id (Optional[str]),
+     inheritance_confirmed (bool default False)
+
+   ExtractedEntities / ConfirmedEntities:
+     age (Optional[str]), sex (Optional[str]), weight (Optional[str]),
+     height (Optional[str]), diagnosis (Optional[str]),
+     medications (Optional[List[str]]), biomarkers (Optional[dict]), country (Optional[str])
+
+   DowngradeState: reason (str), downgraded_from (IntentLabel), user_explanation (str)
+
+   EvidenceItem: source_id (str), source_title (str), relevance_score (float), excerpt_safe (str)
+     # excerpt_safe is the only field ever shown in UI — no internal IDs exposed
+
+4. Define the top-level ConversationState model with all fields from CLAUDE.md state spec.
+   Add debug_trace_internal: Dict[str, Any] = {} — annotate with: # INTERNAL ONLY — strip in DisplayAdapter
+
+5. Class methods and instance methods:
+
+   ConversationState.new(session_id: str) → ConversationState
+     Returns a default-initialized state.
+
+   reset_active_task(self) → None
+     Clears: active_task_context (reset to defaults), turn_entities, inherited_context,
+     pending_slots (on active_task_context), clarification_needed, downgrade_reason.
+     Preserves: session_memory, session_id.
+
+   is_therapy_eligible(self) → bool
+     Returns True only when confirmed_entities has non-null: age, sex, weight, height, diagnosis, medications.
+
+6. Also implement app/classification/intent_labels.py:
+   - Import IntentLabel from app/state/conversation_state (single source of truth for the enum)
+   - Define CONFIDENCE_THRESHOLD: float = 0.70
+   - This file exists only to expose these two symbols cleanly to the classification layer.
+
+7. Write unit tests in app/tests/unit/test_conversation_state.py:
+   - new() initializes with correct defaults
+   - reset_active_task() preserves session_memory, clears active_task_context
+   - is_therapy_eligible() returns False when any required field is None
+   - is_therapy_eligible() returns True when all six required fields are populated
+   - debug_trace_internal field exists on the model
+
+Run: pytest app/tests/unit/test_conversation_state.py -v
+All tests must pass.
+```
+
+**Checkpoint:** `pytest app/tests/unit/test_conversation_state.py -v`
+
+---
+
+## Prompt 3 — Intent Classification Service (Wraps Existing Model)
+
+> `[CLAUDE.md REQUIRED]`
+> **This prompt wraps `app/models/intent_classifier/` — it does NOT create a new model.**
+
+```
+Read CLAUDE.md fully. Then read app/models/intent_classifier/ — list all files and read config.json and any label map file present.
+
+You are wrapping the existing trained model, not creating a new one.
+
+1. In app/classification/intent_classifier.py:
+
+   Read the model directory structure first. Based on what you find:
+   - If a label2id or id2label mapping exists in config.json, use those label indices.
+   - If a custom label map file exists, import it.
+   - Load the model using: pipeline("text-classification", model="app/models/intent_classifier", top_k=None)
+   - Map the model's output labels to IntentLabel enum values from app/state/conversation_state.
+
+   Implement IntentClassifier class:
+
+   __init__(self, model_path: str = "app/models/intent_classifier")
+     Load the HuggingFace pipeline. Log which label mapping is in use.
+
+   classify(self, text: str) -> ClassificationResult
+     Run inference. Return ClassificationResult with:
+       label: Optional[IntentLabel]  (None if low confidence)
+       confidence: float
+       all_scores: Dict[str, float]
+       needs_clarification: bool  (True when confidence < CONFIDENCE_THRESHOLD)
+     If any inference error occurs, log it and return needs_clarification=True with confidence=0.0.
+
+   is_low_confidence(self, result: ClassificationResult) -> bool
+     Returns result.confidence < CONFIDENCE_THRESHOLD
+
+   Also implement MockIntentClassifier with the same interface (for testing):
+     Uses keyword matching:
+       ["plan", "personalized", "therapy", "meal plan", "targets"] → THERAPY
+       ["recommend", "diet for", "guidance"] → RECOMMENDATION
+       ["compare", "vs", "difference between"] → COMPARISON
+       default → GENERAL
+     Always returns confidence=0.85 unless the input is under 4 characters (→ needs_clarification=True)
+
+   Both classes must be importable from app/classification/intent_classifier.
+
+2. In app/api/schemas.py (create this file, do not touch existing files):
+   - ClassifyRequest: text (str), session_id (str)
+   - ClassifyResponse: session_id (str), label (Optional[str]), confidence (float), needs_clarification (bool), clarification_prompt (Optional[str])
+
+3. Unit tests in app/tests/unit/test_intent_classifier.py:
+   Use MockIntentClassifier for all tests (model-independent):
+   - "meal plan for my 8 year old with type 1 diabetes" → THERAPY, needs_clarification=False
+   - "compare bambara nut to groundnut" → COMPARISON
+   - "what does vitamin D do in children" → GENERAL
+   - "diet for a child with IBD" → RECOMMENDATION
+   - "ok" (3 chars) → needs_clarification=True
+
+   Add one integration-style test using the real IntentClassifier that skips if the model directory is empty:
+   @pytest.mark.skipif(not os.path.exists("app/models/intent_classifier/config.json"), reason="Model not present")
+   def test_real_model_loads(): ...
+
+Run: pytest app/tests/unit/test_intent_classifier.py -v
+```
+
+**Checkpoint:** `pytest app/tests/unit/test_intent_classifier.py -v`
+
+---
+
+## Prompt 4 — State Manager
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Implement app/state/state_manager.py.
+
+All agents read/write state through StateManager. No agent touches ConversationState directly.
+
+Backend: Redis via redis-py. Key format: cpna:state:{session_id}. TTL: 3600s.
+Serialization: state.model_dump_json() / ConversationState.model_validate_json().
+
+Implement StateManager class:
+
+get_state(session_id: str) -> ConversationState
+  — Returns ConversationState.new(session_id) if no state exists for that session.
+
+save_state(state: ConversationState) -> None
+  — Serialize and persist with TTL.
+
+update_intent(session_id: str, label: IntentLabel, confidence: float) -> ConversationState
+  — Load, update current_intent + intent_confidence, save, return.
+
+update_turn_entities(session_id: str, entities: TurnEntities) -> ConversationState
+
+confirm_slot(session_id: str, slot_name: str, value: str) -> ConversationState
+  — Move value into confirmed_entities for slot_name.
+  — Remove slot_name from active_task_context.pending_slots.
+  — Save and return.
+
+set_downgrade(session_id: str, reason: str, user_explanation: str, from_intent: IntentLabel) -> ConversationState
+  — Set downgrade_state. Set active_task_context.therapy_downgrade_status = True.
+
+resolve_loose_reply(session_id: str, user_text: str) -> LooseReplyResolution
+  — Uses: last_assistant_prompt_type, active_task_context.pending_slots, active_task_context.workflow_stage
+  — Resolution logic:
+      If pending_slots is non-empty and user_text is a plausible value for the first pending slot:
+        → resolution_type = SLOT_FILL, resolved_slot = pending_slots[0], resolved_value = user_text
+      If last_assistant_prompt_type starts with "confirmation_" and user_text in ["yes","ok","sure","go ahead","proceed"]:
+        → resolution_type = CONFIRMATION
+      Else:
+        → resolution_type = UNKNOWN, confidence = 0.4
+  — Return LooseReplyResolution: resolved_slot, resolved_value, resolution_type (enum: SLOT_FILL|CONFIRMATION|UNKNOWN), confidence
+
+should_inherit_context(session_id: str, new_intent: IntentLabel) -> ContextInheritanceDecision
+  — Return ContextInheritanceDecision: inherit (bool), fields_to_inherit (List[str]), reason (str)
+  — Safe to inherit:
+      THERAPY → THERAPY follow-up (same session, same confirmed_entities)
+      RECOMMENDATION → RECOMMENDATION refinement of same condition
+      User message references "same child", "her", "his", "the same patient"
+  — Unsafe (return inherit=False):
+      New COMPARISON after THERAPY, unless user signals same patient
+      GENERAL question unrelated to active condition
+      New session with no prior confirmed_entities
+
+reset_task(session_id: str) -> ConversationState
+  — Calls state.reset_active_task(), saves, returns.
+
+Define LooseReplyResolution and ContextInheritanceDecision as Pydantic models in this file.
+
+Unit tests in app/tests/unit/test_state_manager.py using fakeredis:
+- get_state creates new state for unknown session_id
+- confirm_slot moves field to confirmed_entities, removes from pending_slots
+- resolve_loose_reply("10") with pending_slots=["age"] → SLOT_FILL for age
+- resolve_loose_reply("yes") with last_assistant_prompt_type="confirmation_meal_plan" → CONFIRMATION
+- should_inherit_context: new COMPARISON after THERAPY session with no user signal → inherit=False
+- should_inherit_context: THERAPY follow-up in same session → inherit=True
+
+Run: pytest app/tests/unit/test_state_manager.py -v
+```
+
+**Checkpoint:** `pytest app/tests/unit/test_state_manager.py -v`
+
+---
+
+## Prompt 5 — Ingestion Pipeline + Hybrid Retrieval
+
+> `[CLAUDE.md REQUIRED]`
+> **This prompt uses `pdf_loader.py`, `chapter_extractor.py`, and `metadata_enricher.py`. Read them first.**
+
+```
+Read CLAUDE.md. Then read these three files in full before writing any code:
+  app/common/pdf_loader.py
+  app/common/chapter_extractor.py
+  app/common/metadata_enricher.py
+
+Print a brief summary of each:
+- What function/class is the main entry point?
+- What does it return? What is the exact type/shape of the output?
+
+Then implement the retrieval layer, using those existing modules as upstream dependencies.
+
+1. app/retrieval/ingestion_pipeline.py
+   IngestionPipeline class that orchestrates the full document → index pipeline:
+   
+   run(pdf_paths: List[str]) -> IngestionSummary
+     Step 1: For each path, call pdf_loader (use whatever function/class you found in step above)
+     Step 2: Pass each loaded document through chapter_extractor to get passage chunks
+     Step 3: Pass each passage through metadata_enricher to attach source metadata
+     Step 4: Produce final List[EnrichedPassage] — adapt metadata_enricher output to this shape:
+       EnrichedPassage: passage_id (str), text (str), source_title (str),
+         source_type (str — from metadata_enricher), condition_tags (List[str]),
+         embedding (Optional[List[float]] — populated downstream)
+     Step 5: Push to Qdrant (via VectorRetriever.index method) and BM25 corpus (via BM25Retriever.add_corpus)
+     
+   Adapt to whatever interface pdf_loader and chapter_extractor already expose.
+   Do not change those files. Write adapter code here if their output shapes differ from EnrichedPassage.
+
+2. app/retrieval/vector_retrieval.py
+   VectorRetriever class (Qdrant backend):
+   
+   search(query_embedding: List[float], top_k: int = 20) -> List[RetrievedPassage]
+   index(passages: List[EnrichedPassage]) -> None
+     Uses sentence-transformers to generate embeddings if not already present on the passage.
+   
+   RetrievedPassage: passage_id, text, source_title, source_type, score (float)
+   Import source_type values from metadata_enricher output (do not redefine them — use whatever strings it produces).
+
+3. app/retrieval/bm25_retrieval.py
+   BM25Retriever class (rank_bm25):
+   
+   add_corpus(passages: List[EnrichedPassage]) -> None
+   search(query: str, top_k: int = 20) -> List[RetrievedPassage]
+
+4. app/retrieval/hybrid_merger.py
+   merge_and_deduplicate(vector_results, bm25_results) -> List[RetrievedPassage]
+   Deduplicates by passage_id, keeps max score for duplicates, returns sorted by score descending.
+
+5. app/retrieval/reranker.py
+   Reranker class (cross-encoder/ms-marco-MiniLM-L-6-v2):
+   rerank(query: str, passages: List[RetrievedPassage], top_k: int = 7) -> List[RetrievedPassage]
+
+6. app/agents/query_rewrite_agent.py
+   QueryRewriteAgent class:
+   rewrite(original_query: str, state: ConversationState) -> str
+   — Calls Anthropic API (claude-haiku-4-5-20251001) with system prompt:
+     "You are a clinical nutrition query optimizer. Rewrite the user's query to maximize retrieval
+      precision from a clinical pediatric nutrition knowledge base. Preserve clinical specificity.
+      Return only the rewritten query, nothing else."
+   — On any API failure, return original_query unchanged (fail-safe).
+
+7. app/agents/retrieval_agent.py
+   RetrievalAgent orchestrating the full pipeline:
+   retrieve(query: str, state: ConversationState) -> RetrievalResult
+   RetrievalResult: rewritten_query (str), passages (List[RetrievedPassage] max 7), retrieval_metadata (dict)
+   Log each stage to observability logger.
+
+8. Integration tests in app/tests/integration/test_retrieval_pipeline.py:
+   Use mock/in-memory Qdrant and BM25.
+   Create 6 synthetic EnrichedPassage fixtures.
+   - Ingestion pipeline produces EnrichedPassage list from mock pdf_loader output
+   - merge_and_deduplicate deduplicates passage_id collisions
+   - Reranker returns ≤ 7 passages
+   - RetrievalResult never exceeds 7 passages
+   - Query rewrite is called before search (mock the Anthropic call)
+
+Run: pytest app/tests/integration/test_retrieval_pipeline.py -v
+```
+
+**Checkpoint:** `pytest app/tests/integration/test_retrieval_pipeline.py -v`
+
+---
+
+## Prompt 6 — Deterministic Therapy Engine (Wraps Existing nutrient_calculator.py)
+
+> `[CLAUDE.md REQUIRED]`
+> **Read `app/common/nutrient_calculator.py` before writing a single line.**
+
+```
+Read CLAUDE.md. Then read app/common/nutrient_calculator.py in full.
+
+Print a summary:
+- What functions/classes does it expose?
+- What are the input parameters and return types for each?
+- Does it already implement DRI lookup? Age-band logic? Condition adjustments?
+
+Based on that audit, implement the engine layer as a wrapper — not a replacement.
+
+1. app/engine/dri_lookup.py
+   DRILookup class.
+   
+   IMPORTANT: If nutrient_calculator.py already implements DRI lookup, import it and delegate:
+     from app.common.nutrient_calculator import <relevant_function>
+   Only implement new DRI logic here for nutrients NOT already covered.
+   
+   get_dri(age_years: float, sex: str, nutrient: str) -> DRIResult
+   DRIResult: nutrient, age_band, sex, rda (Optional[float]), ai (Optional[float]),
+     ul (Optional[float]), unit, source (str default "DRI Tables 2023-2024")
+   
+   Cover nutrients: Energy, Protein, Calcium, Iron, Zinc, Vitamin D, Folate, Vitamin B12
+   Age bands: 0-0.5y, 0.5-1y, 1-3y, 4-8y, 9-13y, 14-18y
+   Raises DRINotFoundError if no matching band found.
+
+2. app/engine/condition_adjustments.py
+   ConditionAdjustmentEngine class.
+   
+   IMPORTANT: If nutrient_calculator.py has condition-specific adjustment logic, import and reuse it.
+   Only add new adjustment rules here for conditions it does not cover.
+   
+   adjust(baseline_dri: Dict[str, DRIResult], diagnosis: str, weight_kg: float) -> AdjustmentResult
+   AdjustmentResult: adjusted_targets (Dict[str, AdjustedTarget]), adjustments_applied (List[AdjustmentNote])
+   AdjustedTarget: nutrient, final_value, unit, adjustment_factor, clinical_rationale
+   AdjustmentNote: nutrient, rule_applied, source (citation string)
+   
+   Required adjustment rules (implement any not already in nutrient_calculator):
+   - Cystic fibrosis: Energy 120-150% of EER, fat-soluble vitamins (ADEK) at 2x RDA
+     Source: "ESPGHAN 2016 CF Nutrition Consensus"
+   - Type 1 diabetes: standard DRI, carbohydrate timing note, no energy inflation
+     Source: "ISPAD 2022 Nutrition Guidelines"
+   - CKD: protein restriction 80-100% DRI depending on GFR stage, potassium/phosphorus limits
+     Source: "KDOQI Pediatric CKD Nutrition 2009"
+   - PKU: phenylalanine restriction, tyrosine supplementation
+     Source: "ACMG PKU Management Guidelines 2018"
+   - Epilepsy/Ketogenic: fat 70-90% of energy, carbohydrate <10g/day
+     Source: "Charlie Foundation Ketogenic Diet Protocol"
+
+3. app/engine/drug_nutrient_interactions.py
+   DrugNutrientInteractionChecker class.
+   check(medications: List[str], nutrients: List[str]) -> List[DrugNutrientInteraction]
+   DrugNutrientInteraction: drug, nutrient, interaction_type (DEPLETION|COMPETITION|ABSORPTION_EFFECT),
+     severity (LOW|MODERATE|HIGH), clinical_note, source
+   
+   Implement for:
+   - Metformin → B12 depletion (HIGH) | Source: "Ting 2014, JAMA"
+   - Anticonvulsants (carbamazepine, valproate, phenytoin) → Vitamin D depletion (MODERATE)
+   - Cholestyramine → fat-soluble vitamins ADEK competition (MODERATE)
+   - Corticosteroids → Calcium depletion, Vitamin D depletion (MODERATE)
+   - Creon (pancrelipase) → no depletion, note: administer with meals for CF fat absorption
+
+4. app/engine/food_source_mapper.py
+   FoodSourceMapper class.
+   map_nutrients_to_foods(nutrients: List[str], country: str) -> Dict[str, List[FoodSource]]
+   FoodSource: food_name, nutrient_content_per_100g (float), unit, local_availability (HIGH|MODERATE|LOW), notes
+   
+   Nigeria-specific foods (country="NG") to include where relevant:
+   Protein: egusi, moi moi, crayfish, soybean, liver, bambara nut
+   Iron: liver, crayfish, moringa leaves, ugba
+   Calcium: crayfish, moringa, uziza leaves, ogi (fortified)
+   Zinc: liver, egusi, soybean
+   Energy/fat: palm oil, groundnut, coconut
+   Vitamin A: moringa, liver, palm oil, uziza
+   General international sources also included as fallback.
+
+5. app/engine/meal_plan_generator.py
+   MealPlanGenerator class.
+   generate(nutrient_targets: Dict[str, AdjustedTarget], country: str, days: int = 3) -> MealPlanDisplay
+   MealPlanDisplay: days (List[DayPlan])
+   DayPlan: day (int), meals (List[MealEntry])
+   MealEntry: meal_name (str), foods (List[str]), estimated_nutrients (Dict[str, float])
+   This is a v1 scaffold — implement a basic rule-based version, not LLM-generated.
+
+6. app/engine/deterministic_nutrient_engine.py
+   DeterministicNutrientEngine orchestrating all above.
+   
+   IMPORTANT: Import nutrient_calculator at the top:
+     from app.common.nutrient_calculator import <discovered functions>
+   Use it as the computation core. Call DRILookup, ConditionAdjustmentEngine,
+   DrugNutrientInteractionChecker, FoodSourceMapper as post-processors and enrichers.
+   
+   compute_therapy_plan(patient: ConfirmedEntities) -> TherapyEngineResult
+   TherapyEngineResult:
+     patient_summary (str), nutrient_targets (List[AdjustedTarget]),
+     drug_nutrient_notes (List[DrugNutrientInteraction]),
+     food_sources (Dict[str, List[FoodSource]]),
+     computation_trace (Dict)  # INTERNAL ONLY — never render in UI
+   Raises TherapyEngineError if any of [age, sex, weight, height, diagnosis] is None.
+
+7. Unit tests in app/tests/unit/test_deterministic_engine.py:
+   - DRI lookup: 8-year-old female → correct Calcium RDA
+   - CF adjustment: energy target > baseline EER
+   - PKU adjustment: phenylalanine restriction flag present
+   - Drug check: metformin + B12 → HIGH severity depletion returned
+   - Drug check: creon returns absorption note, not a depletion
+   - Food mapper: country="NG", nutrient="iron" → includes "liver" and "crayfish"
+   - compute_therapy_plan raises TherapyEngineError when age=None
+   - computation_trace field present in TherapyEngineResult (to be stripped later by DisplayAdapter)
+
+Run: pytest app/tests/unit/test_deterministic_engine.py -v
+```
+
+**Checkpoint:** `pytest app/tests/unit/test_deterministic_engine.py -v`
+
+---
+
+## Prompt 7 — Workflow Orchestration Layer
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Implement the four query-type workflows and the top-level router.
+
+All workflows import from:
+  app/state/conversation_state.py  (state types)
+  app/state/state_manager.py       (StateManager)
+  app/engine/deterministic_nutrient_engine.py
+  app/agents/retrieval_agent.py
+  app/classification/intent_labels.py
+
+1. app/agents/therapy_gatekeeper_agent.py
+   TherapyGatekeeperAgent class.
+   
+   SUPPORTED_CONDITIONS: list matching CLAUDE.md therapy conditions (exact strings, lowercase).
+   
+   evaluate(state: ConversationState) -> GatekeeperDecision
+   GatekeeperDecision: can_proceed (bool), missing_slots (List[str]),
+     downgrade_reason (Optional[str]), user_explanation (Optional[str])
+   
+   Rules:
+   a. Diagnosis not in SUPPORTED_CONDITIONS → can_proceed=False, downgrade_reason="unsupported_condition",
+      user_explanation="I can provide general guidance for this condition, but detailed therapy planning
+      requires one of the conditions I'm trained on. Let me give you a recommendation instead."
+   b. Any of [age, sex, weight, height, diagnosis, medications] missing from confirmed_entities
+      → can_proceed=False, missing_slots=[list of missing fields]
+   c. Biomarkers missing: can_proceed=True, but include a note in user_explanation that targets
+      may be less precise without lab values.
+
+2. app/agents/slot_filling_agent.py
+   SlotFillingAgent class.
+   
+   SLOT_PROMPTS dict mapping slot name → natural language question:
+     "age": "How old is your child?"
+     "sex": "Is your child male or female?"
+     "weight": "What is your child's current weight (in kg or lbs)?"
+     "height": "What is your child's height?"
+     "diagnosis": "What is the primary diagnosis or condition you'd like me to plan for?"
+     "medications": "Is your child currently on any medications? If none, just say 'none'."
+     "biomarkers": "Do you have any recent lab values (e.g. HbA1c, FEV1, creatinine)? These help me give more precise targets — but you can skip this if unavailable."
+     "country": "Which country are you based in? This helps me suggest locally available foods."
+   
+   generate_slot_prompt(missing_slots: List[str], state: ConversationState) -> str
+   — Returns prompt for the FIRST slot only — never asks for multiple fields at once.
+   — Updates state.last_assistant_prompt_type = f"slot_request_{missing_slots[0]}" before returning.
+
+3. app/workflows/therapy_workflow.py
+   TherapyWorkflow class.
+   execute(state: ConversationState, user_message: str, state_manager: StateManager) -> WorkflowResult
+   
+   WorkflowResult: response_data (dict — raw before adapter), query_type (IntentLabel),
+     updated_state (ConversationState), requires_slot_fill (bool), slot_prompt (Optional[str])
+   
+   Steps:
+   1. Run basic entity extraction from user_message (regex + keyword), update turn_entities via state_manager
+   2. Run TherapyGatekeeperAgent.evaluate(state)
+   3a. If gatekeeper fails with missing_slots: return SlotFillingAgent prompt as WorkflowResult
+   3b. If gatekeeper fails with unsupported_condition: call RecommendationWorkflow, add downgrade note
+   4. If gatekeeper passes: run DeterministicNutrientEngine.compute_therapy_plan(state.confirmed_entities)
+   5. Run RetrievalAgent.retrieve(user_message, state) for evidence
+   6. Assemble raw therapy output dict (to be adapted by DisplayAdapter)
+   7. Return WorkflowResult
+
+4. app/workflows/recommendation_workflow.py
+   RecommendationWorkflow:
+   execute(state, user_message, state_manager, downgraded_from_therapy=False) -> WorkflowResult
+   — Age-aware DRI preview via DRILookup if age is in confirmed or turn entities.
+   — If downgraded_from_therapy=True, include therapy_upgrade_note in output dict.
+   — No gatekeeper. No deterministic engine.
+
+5. app/workflows/comparison_workflow.py
+   ComparisonWorkflow:
+   execute(state, user_message, state_manager) -> WorkflowResult
+   — Extract both compared entities from user_message. If either is a placeholder ("Food A"), raise WorkflowError.
+   — Call state_manager.should_inherit_context(). If inherit=False, do NOT carry patient data.
+   — Determine comparison_mode: "quantitative" if numeric food composition data exists, else "qualitative".
+   — Assemble comparison output dict with actual entity names.
+
+6. app/workflows/general_workflow.py
+   GeneralWorkflow:
+   execute(state, user_message, state_manager) -> WorkflowResult
+   — Lightweight. No therapy logic. Retrieval-backed educational response only.
+
+7. app/workflows/workflow_router.py
+   WorkflowRouter class.
+   route(state: ConversationState, user_message: str, state_manager: StateManager) -> WorkflowResult
+   — If state.current_intent is None or state.intent_confidence < CONFIDENCE_THRESHOLD:
+       return WorkflowResult with clarification prompt (not an error):
+       "I want to make sure I help you correctly — are you looking for personalized nutrition
+        planning, dietary guidance, a food comparison, or general nutrition information?"
+   — Otherwise route to the matching workflow by intent.
+   — Log routing decision to observability logger.
+
+8. Integration tests in app/tests/integration/test_workflow_routing.py:
+   - THERAPY intent → TherapyWorkflow executes
+   - Missing slots → slot prompt returned (not therapy output)
+   - Unsupported diagnosis → downgrade to RecommendationWorkflow
+   - COMPARISON after prior therapy session → should_inherit_context called, not silent carryover
+   - Low confidence intent → clarification text returned, no workflow error
+
+Run: pytest app/tests/integration/test_workflow_routing.py -v
+```
+
+**Checkpoint:** `pytest app/tests/integration/test_workflow_routing.py -v`
+
+---
+
+## Prompt 8 — Response Contracts and Display Adapter
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Implement the full response contract layer in app/contracts/.
+
+This is the safety boundary between the backend orchestration layer and the frontend.
+The display adapter is the LAST line of defense before data is returned via API.
+
+1. app/contracts/response_contracts.py
+   All models are Pydantic BaseModel. These are the ONLY shapes the frontend ever receives.
+   
+   NutrientTargetRow: nutrient (str), value (float), unit (str), clinical_note (Optional[str])
+   NutrientPreviewRow: nutrient (str), rda (Optional[float]), ai (Optional[float]), unit (str)
+   DrugNutrientDisplay: drug (str), nutrient (str), severity (str), note (str)
+   FoodSourceSection: nutrient (str), foods (List[str])
+   MealPlanDisplay: days (List[dict])
+   QuantitativeMatrix: headers (List[str]), rows (List[dict])
+   QualitativePoints: entity_a (str), points_a (List[str]), entity_b (str), points_b (List[str])
+   EvidenceItem: source_title (str), excerpt_safe (str)  # NO source_id, NO internal IDs
+   EvidenceSummary: used_sources (List[EvidenceItem]), retrieval_note (str)
+   
+   RecommendationResponse (query_type: Literal["recommendation"]):
+     title, summary, context_summary, nutrient_preview (Optional), practical_guidance,
+     foods_to_emphasize (List[str]), foods_to_limit (List[str]),
+     therapy_upgrade_note (Optional[str]), follow_up_hint (str), evidence_summary
+   
+   TherapyResponse (query_type: Literal["therapy"]):
+     title, summary, patient_summary, assumptions_used (List[str]),
+     nutrient_targets (List[NutrientTargetRow]), drug_nutrient_notes (List[DrugNutrientDisplay]),
+     food_sources (List[FoodSourceSection]), meal_plan (Optional[MealPlanDisplay]),
+     follow_up_hint, evidence_summary, next_step (str)
+   
+   ComparisonResponse (query_type: Literal["comparison"]):
+     title, summary, entities (List[str]),  # MUST be real names — never "Food A"
+     context_or_assumptions (Optional[str]), executive_takeaway (str),
+     comparison_mode (Literal["quantitative","qualitative"]),
+     matrix_or_points (Union[QuantitativeMatrix, QualitativePoints]),
+     interpretation (str), decision_rules (List[str]), follow_up_hint, evidence_summary
+   
+   GeneralResponse (query_type: Literal["general"]):
+     title, summary, direct_answer, explanation, examples (Optional[List[str]]),
+     transition_note (Optional[str]), follow_up_hint, evidence_summary
+   
+   CPNAResponse = Union[TherapyResponse, RecommendationResponse, ComparisonResponse, GeneralResponse]
+
+2. app/contracts/display_adapter.py
+   DisplayAdapter class.
+   
+   FORBIDDEN_FIELDS = {
+     "debug_trace_internal", "computation_trace", "internal_compliance_keys",
+     "__class__", "_sa_instance_state"
+   }
+   PLACEHOLDER_ENTITY_PATTERNS = ["Food A", "Food B", "Entity 1", "Entity 2", "Nutrient X"]
+   
+   adapt(workflow_result: WorkflowResult) -> CPNAResponse
+   
+   Enforce ALL of the following rules — none are optional:
+   a. Strip every key in FORBIDDEN_FIELDS from the response dict before building the contract model.
+   b. If query_type is THERAPY and TherapyEngineResult data is absent in workflow_result → raise DisplayAdapterError.
+   c. If comparison entities list contains any value matching PLACEHOLDER_ENTITY_PATTERNS → raise DisplayAdapterError.
+   d. EvidenceItem list must only include sources from workflow_result.retrieval_passages (current turn only).
+   e. Remove empty optional sections: None fields, empty lists that are Optional → omit entirely.
+   f. Humanize any raw field names that leaked as string values (e.g. "drug_nutrient_notes" → should never appear as display text).
+   g. Check final model output for "[object Object]", "<class " strings → raise DisplayAdapterError if found.
+   
+   strip_forbidden_fields(data: dict) -> dict
+     Recursive — handles nested dicts and lists.
+
+3. Unit tests in app/tests/unit/test_display_adapter.py:
+   - Valid therapy workflow result → TherapyResponse with correct fields
+   - Workflow result with debug_trace_internal → field absent from adapted output
+   - Comparison with "Food A" entity → raises DisplayAdapterError
+   - Therapy query_type but no engine result → raises DisplayAdapterError
+   - Evidence in output matches only current-turn passages (not prior turn)
+   - Empty optional fields (None nutrient_preview) → absent from output, no KeyError
+
+Run: pytest app/tests/unit/test_display_adapter.py -v
+```
+
+**Checkpoint:** `pytest app/tests/unit/test_display_adapter.py -v`
+
+---
+
+## Prompt 9 — API Layer and Orchestration Entrypoint
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Wire the full backend into a FastAPI application.
+
+1. app/api/router.py
+   FastAPI app with these endpoints:
+
+   POST /api/chat
+   Request (ChatRequest): session_id (str), message (str)
+   Response (ChatResponse): session_id, response (CPNAResponse), state_snapshot (StateSnapshot)
+   StateSnapshot: current_intent, workflow_stage, pending_slots, clarification_needed
+   
+   Full orchestration sequence inside POST /api/chat:
+   1. Load/create ConversationState via StateManager.get_state(session_id)
+   2. Run IntentClassifier.classify(message)
+   3. If needs_clarification → return ChatResponse with clarification GeneralResponse (not HTTP 400)
+   4. Update state via StateManager.update_intent(session_id, label, confidence)
+   5. Check if workflow_stage indicates pending slot → run StateManager.resolve_loose_reply
+      If SLOT_FILL resolution → run StateManager.confirm_slot, then re-evaluate gatekeeper
+   6. Run WorkflowRouter.route(state, message, state_manager)
+   7. Run DisplayAdapter.adapt(workflow_result) → CPNAResponse
+   8. StateManager.save_state(updated_state)
+   9. Return ChatResponse
+   
+   On DisplayAdapterError: return a safe GeneralResponse:
+     direct_answer = "I wasn't able to format a complete response for that query."
+     Log the error internally. Never expose the error message to the client.
+
+   POST /api/session/reset
+   Request: { session_id: str }
+   Response: { status: "ok", session_id: str }
+   Calls StateManager.reset_task(session_id)
+
+   GET /api/health
+   Response: { status: "ok", version: "1.0.0" }
+
+   GET /metrics
+   Prometheus metrics endpoint (wired in Prompt 12)
+
+2. Middleware (add to app/api/router.py):
+   - Request ID middleware: generate UUID, attach as X-Request-ID header and to structlog context
+   - Structured request logging: session_id, intent, latency_ms per request
+     NOTE: Do NOT log message text, biomarker values, or medication names (PII)
+   - Global exception handler: on unhandled exception return:
+     { "error": "Something went wrong. Please try again.", "session_id": session_id }
+     Never leak stack traces or internal error messages.
+
+3. app/api/schemas.py (extend the file created in Prompt 3 — do not overwrite):
+   Add: ChatRequest, ChatResponse, StateSnapshot, ResetRequest, ResetResponse, HealthResponse
+
+4. Integration tests in app/tests/integration/test_api.py:
+   Use httpx.AsyncClient + pytest-asyncio. Mock Redis (fakeredis), mock Qdrant, mock IntentClassifier (MockIntentClassifier).
+   
+   - POST /api/chat with "What does vitamin D do?" → 200, query_type == "general"
+   - POST /api/chat with "Give me a personalized plan" (no prior slots) → 200, slot prompt returned (not TherapyResponse)
+   - POST /api/chat with low confidence message → 200, needs_clarification in response, no 400
+   - POST /api/session/reset → 200, status == "ok"
+   - All responses pass CPNAResponse Pydantic validation
+   - No response contains "debug_trace_internal", "[object Object]", or stack trace strings
+
+Run: pytest app/tests/integration/test_api.py -v
+Then: uvicorn app.api.router:app --port 8000 (confirm server starts cleanly)
+```
+
+**Checkpoint:** `pytest app/tests/integration/test_api.py -v`
+
+---
+
+## Prompt 10 — Frontend Chat UI
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Implement the CPNA chat frontend.
+
+Design directive: calm, clinical, chat-first. No dashboard panels. No button-grid CTAs.
+The interface should feel like a knowledgeable clinical companion — measured, clear, trustworthy.
+
+Design system:
+  Background: #F7F6F3 (warm off-white)
+  Text: #1C1C1A (near-black)
+  Accent: #00796B (clinical teal — deep, not neon)
+  Assistant bubble: #FFFFFF with border: 1px solid #E5E3DF and subtle shadow
+  User bubble: #E8F5F3 (teal tint)
+  Fonts: body → "DM Sans", data/numbers → "JetBrains Mono", section titles → "Fraunces"
+  Import from Google Fonts in layout.tsx.
+
+1. frontend/src/lib/types.ts
+   TypeScript types mirroring all CPNAResponse contract shapes from Prompt 8.
+   No `any` types. Export: RecommendationResponse, TherapyResponse, ComparisonResponse,
+   GeneralResponse, CPNAResponse (discriminated union on query_type), EvidenceSummary, etc.
+
+2. frontend/src/lib/api.ts
+   sendMessage(sessionId: string, message: string): Promise<CPNAResponse>
+   POST to /api/chat. On network error, throw a user-safe Error("Something went wrong.").
+   getOrCreateSessionId(): string — uses sessionStorage, generates UUID on first call.
+
+3. frontend/src/hooks/useChat.ts
+   Manages: messages (ChatMessage[]), isLoading (bool), error (string|null)
+   ChatMessage: role ("user"|"assistant"), content (string|CPNAResponse), id (string)
+   sendMessage(text: string): calls api.ts, appends user message immediately, appends assistant response on resolve.
+   On error: sets error to "Something went wrong. Please try again." — never exposes raw error.
+
+4. frontend/src/components/chat/ChatWindow.tsx
+   Scrollable message list. Auto-scroll to latest on new message.
+   Renders MessageBubble per message.
+   Shows TypingIndicator while isLoading=true.
+   No button clusters. No CTA groups. Only text input and send.
+
+5. frontend/src/components/chat/MessageBubble.tsx
+   UserBubble: right-aligned, teal-tint background, DM Sans.
+   AssistantBubble: left-aligned, white card, renders the correct response card by query_type.
+   Never renders undefined, null, or raw JSON strings.
+   If content is a string (clarification/slot prompt): render as plain text paragraph.
+   If content is CPNAResponse: switch on query_type → render matching card component.
+
+6. frontend/src/components/chat/InputBar.tsx
+   Full-width text input. Send on Enter or button click. Disabled while isLoading.
+   Placeholder: "Ask about pediatric nutrition..."
+   No other controls.
+
+7. frontend/src/components/response-cards/TherapyCard.tsx
+   Sections (render only if data present — no empty section headers):
+   - patient_summary (plain text)
+   - assumptions_used (subtle grey list)
+   - Nutrient Targets: <NutrientTable rows={nutrient_targets} />
+   - Drug & Nutrient Interactions: compact list with severity badge (HIGH=red, MODERATE=amber, LOW=grey)
+   - Food Sources: grouped by nutrient
+   - Meal Plan (if present): day-by-day compact layout
+   - next_step (emphasized text)
+   - <EvidenceBadge evidence={evidence_summary} />
+
+8. frontend/src/components/response-cards/RecommendationCard.tsx
+   Sections: context_summary, nutrient_preview (if present — compact table), practical_guidance,
+   foods_to_emphasize, foods_to_limit, therapy_upgrade_note (if present — rendered as a soft
+   informational text, NOT a button), <EvidenceBadge />.
+
+9. frontend/src/components/response-cards/ComparisonCard.tsx
+   executive_takeaway rendered prominently at top.
+   entities displayed as a comparison header (never blank).
+   Quantitative mode: two-column data table using QuantitativeMatrix headers/rows.
+   Qualitative mode: two-column bullet list using QualitativePoints.
+   interpretation and decision_rules below the matrix.
+   <EvidenceBadge />.
+
+10. frontend/src/components/response-cards/GeneralCard.tsx
+    direct_answer, explanation, examples (if present), transition_note (if present, soft text).
+    <EvidenceBadge />.
+
+11. frontend/src/components/ui/EvidenceBadge.tsx
+    Collapsed by default. Label: "Sources (N)".
+    On expand: list of source_title + excerpt_safe per EvidenceItem.
+    Never renders source_id or any internal identifier.
+
+12. frontend/src/components/ui/NutrientTable.tsx
+    Columns: Nutrient | Target | Unit | Clinical Note.
+    JetBrains Mono for numeric cells. DM Sans for labels.
+    Hide clinical_note column if all values are null.
+
+13. frontend/src/app/page.tsx — compose ChatWindow + InputBar in a centered column layout.
+14. frontend/src/app/layout.tsx — Google Fonts import, global CSS vars, base reset.
+
+Acceptance rules:
+- npm run build must complete with 0 TypeScript errors
+- No response card renders undefined, null, or [object Object]
+- follow_up_hint renders as plain text, never as a clickable button
+- All optional sections hidden (not empty) when data absent
+- Mobile responsive: single column, full-width InputBar at bottom
+```
+
+**Checkpoint:** `cd frontend && npm run build` — 0 errors.
+
+---
+
+## Prompt 11 — End-to-End Test Suite
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Implement the full E2E test suite in app/tests/e2e/.
+Use pytest + httpx. Use fakeredis, mock Qdrant, MockIntentClassifier.
+Create synthetic test fixtures in app/tests/fixtures/passages.py (10 EnrichedPassage objects).
+
+E2E-1: Recommendation basic
+  Input: "Diet for a 10 year old with diabetes"
+  Assert:
+  - response.query_type == "recommendation"
+  - No nutrient_targets field (therapy output absent)
+  - nutrient_preview present (age-aware)
+  - No raw schema strings in any string field value
+
+E2E-2: Therapy gated — missing fields
+  Input: "Give me a personalized meal plan for my child with cystic fibrosis"
+  (Fresh session — no prior confirmed_entities)
+  Assert:
+  - No TherapyResponse returned
+  - Response is a slot prompt (asking for missing data)
+  - nutrient_targets absent
+
+E2E-3: Therapy pass
+  Pre-populate session state: age="8", sex="female", weight="25", height="128",
+  diagnosis="cystic fibrosis", medications=["creon"]
+  Input: "Give me her full nutrition plan"
+  Assert:
+  - response.query_type == "therapy"
+  - nutrient_targets non-empty
+  - energy target > baseline (CF adjustment applied)
+  - drug_nutrient_notes present (Creon)
+  - evidence_summary non-empty
+
+E2E-4: Comparison food vs food
+  Fresh session. Input: "Compare bambara nut to groundnut"
+  Assert:
+  - response.query_type == "comparison"
+  - response.entities == ["bambara nut", "groundnut"]
+  - No patient data in response
+  - comparison_mode is "quantitative" or "qualitative" — never absent
+
+E2E-5: No silent context carryover in comparison
+  Session has prior therapy state for diabetic 8-year-old.
+  Input: "Compare brown rice to white rice"
+  Assert:
+  - Either: response is a general food comparison (patient data NOT inherited)
+  - Or: response asks user to confirm context before inheriting
+  - Never: response silently uses prior patient data in comparison output
+
+E2E-6: General knowledge
+  Input: "What does vitamin D do in children?"
+  Assert:
+  - response.query_type == "general"
+  - direct_answer non-empty
+  - No therapy fields
+  - No slot prompt
+
+E2E-7: Loose reply slot resolution
+  Turn 1: "I need a personalized plan for my son" → system asks for age
+  Turn 2: "10"
+  Assert:
+  - Age slot resolved to "10" from turn 2
+  - System advances to next slot or gatekeeper evaluation
+  - "10" not treated as a standalone new query
+
+E2E-8: No raw object leakage — run all 4 query types
+  Assert on every response:
+  - No string field contains "[object Object]"
+  - No string field contains "debug_trace"
+  - No string field contains "__class__"
+  - No string field contains "computation_trace"
+  - Pydantic CPNAResponse.model_validate(response_dict) succeeds for all
+
+E2E-9: No button dependency
+  Run recommendation and general flows.
+  Assert:
+  - follow_up_hint is a str, not a list
+  - No "actions", "buttons", or "cta" key in any response dict
+  - Workflow advances via text input alone
+
+E2E-10: Evidence is scoped to current turn
+  Run therapy flow (two turns).
+  Assert:
+  - evidence_summary.used_sources on turn 2 contains only turn-2 passages
+  - No passage from turn 1 appears in turn 2 evidence
+  - used_sources non-empty
+
+After implementing all tests:
+Run: pytest app/tests/e2e/ -v --tb=short
+All 10 must pass before build handoff.
+```
+
+**Checkpoint:** `pytest app/tests/e2e/ -v` — 10/10 passing.
+
+---
+
+## Prompt 12 — Observability, Final Wiring, and Gap Audit
+
+> `[CLAUDE.md REQUIRED]`
+
+```
+Read CLAUDE.md. Implement the observability layer, wire it into all agents, and perform the final integration sweep.
+
+1. app/observability/logger.py
+   Structured JSON logger using structlog.
+   
+   Log schema (emit at end of each /api/chat request):
+   {
+     "session_id": str,
+     "request_id": str,
+     "intent": str,
+     "intent_confidence": float,
+     "workflow_routed_to": str,
+     "retrieval_passage_count": int,
+     "latency_ms": float,
+     "downgrade_occurred": bool,
+     "error": str | null
+   }
+   
+   NEVER log: user message text, biomarker values, medication names, patient weight/height.
+   These are PII — log only derived metadata.
+
+2. app/observability/metrics.py
+   Prometheus metrics (prometheus-client):
+   - cpna_requests_total (Counter, labels: query_type, status)
+   - cpna_intent_confidence (Histogram, buckets: 0.1 steps from 0 to 1.0)
+   - cpna_latency_seconds (Histogram, labels: query_type)
+   - cpna_downgrade_total (Counter, labels: downgrade_reason)
+   - cpna_low_confidence_total (Counter)
+
+3. Wire observability into:
+   - WorkflowRouter: log routing decision + intent
+   - TherapyGatekeeperAgent: log pass/fail + reason
+   - RetrievalAgent: log passage count after each stage
+   - DisplayAdapter: log if any FORBIDDEN_FIELDS were stripped
+   - app/api/router.py: log full request summary + latency
+
+4. Final integration sweep:
+   Run: python -c "from app.api.router import app; print('Import OK')"
+   Fix any circular imports before proceeding.
+   
+   Run full test suite:
+   pytest app/tests/ -v --tb=short
+   
+   Run frontend build:
+   cd frontend && npm run build
+   
+   Start server:
+   uvicorn app.api.router:app --port 8000 --reload
+   Confirm it starts with no errors.
+
+5. Create KNOWN_GAPS.md at project root. Populate honestly:
+
+   ## Existing Module Integration Status
+   - app/common/nutrient_calculator.py: [describe how it was wrapped — what was used, what was not]
+   - app/common/chapter_extractor.py: [describe integration point in IngestionPipeline]
+   - app/common/metadata_enricher.py: [describe what fields it produced and how they mapped to EnrichedPassage]
+   - app/models/intent_classifier/: [real model used vs MockIntentClassifier — which tests use which]
+   
+   ## Stubs and Incomplete Implementations
+   [List every file with a stub, placeholder, or TODO — be specific]
+   
+   ## Knowledge Base Status
+   - Qdrant index: populated / empty / mock only
+   - BM25 corpus: populated / empty / mock only
+   - PDF sources ingested: [list or "none yet"]
+   
+   ## Known Test Gaps
+   [Any E2E test marked xfail or skipped — with reason]
+   
+   ## Recommended Next Steps for v1.1
+   [What to tackle after v1 handoff]
+```
+
+**Final Checkpoint:**
+```bash
+# Activate venv first
+source rag_env/bin/activate
+
+# Full test run
+pytest app/tests/ -v --tb=short
+
+# Frontend build
+cd frontend && npm run build && cd ..
+
+# Import check
+python -c "from app.api.router import app; print('API import OK')"
+
+# Server start
+uvicorn app.api.router:app --port 8000
+
+# Review gaps
+cat KNOWN_GAPS.md
+```
+
+---
+
+## Build Handoff Acceptance Criteria
+
+| Criterion | Verified By |
+|---|---|
+| Existing files untouched, only wrapped/extended | `git diff app/common/ app/models/ app/training/` — no changes |
+| No duplicate nutrient logic | `grep -r "def calculate_nutrient" app/engine/` — returns nothing (only in common/) |
+| requirements.txt extended, not overwritten | Original entries present, new entries appended |
+| All 4 query types route correctly | E2E-1, E2E-2, E2E-3, E2E-6 pass |
+| Therapy gatekeeper works | E2E-2, E2E-3 pass |
+| Loose replies resolve correctly | E2E-7 passes |
+| Comparison entities never placeholders | E2E-4, E2E-5 pass |
+| No raw backend leakage | E2E-8 passes |
+| Context inheritance is selective | E2E-5 passes |
+| Evidence is turn-scoped | E2E-10 passes |
+| Full test suite green | `pytest app/tests/ -v` — 0 failures |
+| Frontend builds | `npm run build` — 0 errors |
+| Gaps documented | `KNOWN_GAPS.md` present and populated |
+
+**v1 is complete when all 13 rows above are verified.**
+
+---
+
+*CPNA v1 Claude Code Prompt Pack v2 — Powerhouse9ja*
+*Built against Build Spec Pack v1 + existing codebase audit.*
+*Activate rag_env before every Claude Code session. Keep CLAUDE.md at project root at all times.*

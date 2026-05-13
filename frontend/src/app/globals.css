@@ -1,0 +1,51 @@
+/* CPNA design system — global CSS variables and base reset */
+
+:root {
+  --color-bg: #F7F6F3;
+  --color-text: #1C1C1A;
+  --color-accent: #00796B;
+  --color-bubble-assistant: #FFFFFF;
+  --color-bubble-user: #E8F5F3;
+  --color-border: #E5E3DF;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body, "DM Sans", system-ui, sans-serif);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D0CEC9;
+  border-radius: 3px;
+}
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+  body {
+    font-size: 15px;
+  }
+}
