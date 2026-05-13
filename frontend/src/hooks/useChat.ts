@@ -36,8 +36,9 @@ export function useChat() {
         content: response,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setError(msg);
     } finally {
       setIsLoading(false);
     }

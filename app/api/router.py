@@ -37,7 +37,7 @@ from app.classification.intent_classifier import MockIntentClassifier
 from app.classification.intent_labels import CONFIDENCE_THRESHOLD, IntentLabel
 from app.contracts.display_adapter import DisplayAdapter, DisplayAdapterError
 from app.contracts.response_contracts import EvidenceSummary, GeneralResponse
-from app.observability.logger import log_request_summary
+from app.observability.logger import log_error, log_pipeline_event, log_request_summary
 from app.observability.metrics import (
     cpna_downgrade_total,
     cpna_latency_seconds,
@@ -111,12 +111,13 @@ async def request_id_middleware(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     session_id = getattr(request.state, "session_id", "unknown")
-    logger.error(
-        "Unhandled exception for session=%s request_id=%s: %s",
-        session_id,
-        getattr(request.state, "request_id", ""),
+    request_id = getattr(request.state, "request_id", "unknown")
+    log_error(
+        "unhandled_exception",
         exc,
-        exc_info=True,
+        session_id=session_id,
+        request_id=request_id,
+        extra={"path": str(request.url.path), "method": request.method},
     )
     return JSONResponse(
         status_code=500,
@@ -246,10 +247,24 @@ async def chat(request: Request, body: ChatRequest) -> JSONResponse:
     _workflow_routed_to = intent_label.value
 
     # Step 6 — route
+    log_pipeline_event(
+        "intent_classified",
+        session_id=body.session_id,
+        request_id=request_id,
+        intent=intent_label.value,
+        confidence=round(confidence, 4),
+    )
+
     try:
         workflow_result = router.route(state, body.message, sm)
     except WorkflowError as exc:
-        logger.warning("WorkflowError session=%s: %s", body.session_id, exc)
+        log_error(
+            "workflow_routing",
+            exc,
+            session_id=body.session_id,
+            request_id=request_id,
+            intent=intent_label.value,
+        )
         cpna_resp = _clarification_response(
             "I couldn't identify the items you'd like to compare. "
             "Please try: 'Compare X vs Y' or 'Compare X to Y'."
@@ -297,10 +312,12 @@ async def chat(request: Request, body: ChatRequest) -> JSONResponse:
         try:
             cpna_resp = adapter.adapt(workflow_result)
         except DisplayAdapterError as exc:
-            logger.error(
-                "DisplayAdapterError session=%s: %s",
-                body.session_id,
+            log_error(
+                "display_adapter",
                 exc,
+                session_id=body.session_id,
+                request_id=request_id,
+                intent=intent_label.value,
             )
             cpna_resp = _safe_adapter_fallback()
             _error = "DisplayAdapterError"
