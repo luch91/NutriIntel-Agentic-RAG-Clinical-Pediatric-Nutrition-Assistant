@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/api/chat",
+      "destination": "https://nutriintel-api.vercel.app/api/chat"
+    },
+    {
+      "source": "/api/eval",
+      "destination": "https://nutriintel-api.vercel.app/api/eval"
+    },
+    {
+      "source": "/api/health",
+      "destination": "https://nutriintel-api.vercel.app/api/health"
+    }
+  ]
+}

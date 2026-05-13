@@ -1,21 +1,29 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "outputDirectory": "frontend/.next",
-  "installCommand": "cd frontend && npm install",
-  "framework": "nextjs",
-  "rewrites": [
+  "builds": [
     {
-      "source": "/api/chat",
-      "destination": "https://nutriintel-api.vercel.app/api/chat"
-    },
-    {
-      "source": "/api/eval",
-      "destination": "https://nutriintel-api.vercel.app/api/eval"
-    },
-    {
-      "source": "/api/health",
-      "destination": "https://nutriintel-api.vercel.app/api/health"
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb",
+        "runtime": "python3.11"
+      }
     }
-  ]
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/metrics",
+      "dest": "/api/index.py"
+    }
+  ],
+  "env": {
+    "REDIS_URL": "@redis_url",
+    "QDRANT_URL": "@qdrant_url",
+    "QDRANT_COLLECTION": "@qdrant_collection",
+    "EVAL_SECRET": "@eval_secret"
+  }
 }
