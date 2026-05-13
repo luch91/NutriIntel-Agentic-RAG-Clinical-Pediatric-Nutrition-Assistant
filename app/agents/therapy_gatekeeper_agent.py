@@ -14,24 +14,14 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
+from app.config.routing_config import CONDITION_ROUTING, normalize_condition
 from app.observability.metrics import cpna_downgrade_total
 from app.state.conversation_state import ConversationState
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_CONDITIONS: List[str] = [
-    "type 1 diabetes",
-    "cystic fibrosis",
-    "food allergy",
-    "preterm nutrition",
-    "chronic kidney disease",
-    "pku",
-    "msud",
-    "galactosemia",
-    "epilepsy/ketogenic therapy",
-    "ibd",
-    "gerd",
-]
+# Supported routing keys — derived from routing_config so it stays in sync
+SUPPORTED_CONDITIONS: List[str] = list(CONDITION_ROUTING.keys())
 
 _REQUIRED_SLOTS = ["age", "sex", "weight", "height", "diagnosis", "medications"]
 
@@ -50,7 +40,10 @@ class TherapyGatekeeperAgent:
 
         diagnosis = ce.diagnosis
         if diagnosis is not None:
-            if diagnosis.strip().lower() not in SUPPORTED_CONDITIONS:
+            # diagnosis is already stored as a routing key (e.g. "cystic_fibrosis")
+            # via parse_slot_value. Fall back to normalize_condition for legacy raw strings.
+            routing_key = diagnosis if diagnosis in SUPPORTED_CONDITIONS else normalize_condition(diagnosis)
+            if routing_key not in SUPPORTED_CONDITIONS:
                 cpna_downgrade_total.labels(downgrade_reason="unsupported_condition").inc()
                 logger.info(
                     "TherapyGatekeeperAgent: downgrade — unsupported condition '%s'",

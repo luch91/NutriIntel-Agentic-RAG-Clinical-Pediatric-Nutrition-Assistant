@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Tuple, Union, cast
 import redis as redis_lib
 from pydantic import BaseModel
 
+from app.agents.slot_filling_agent import parse_slot_value
 from app.state.conversation_state import (
     ConfirmedEntities,
     ConversationState,
@@ -198,11 +199,14 @@ class StateManager:
         ce = state.confirmed_entities
 
         if slot_name in _SCALAR_SLOTS:
-            setattr(ce, slot_name, value)
+            setattr(ce, slot_name, parse_slot_value(slot_name, value))
         elif slot_name == "medications":
-            # Accept comma-separated list or single value
-            items = [v.strip() for v in value.split(",") if v.strip()]
-            ce.medications = items if items else [value]
+            parsed = parse_slot_value("medications", value)
+            if isinstance(parsed, list):
+                ce.medications = parsed
+            else:
+                items = [v.strip() for v in value.split(",") if v.strip()]
+                ce.medications = items if items else [value]
         else:
             # Unknown slot — store generically (biomarkers handled separately)
             logger.warning("confirm_slot: unrecognised slot '%s', skipping", slot_name)

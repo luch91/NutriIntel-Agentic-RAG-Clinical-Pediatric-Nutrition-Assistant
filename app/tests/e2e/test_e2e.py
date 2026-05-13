@@ -362,7 +362,7 @@ def test_e2e_7_loose_reply_slot_resolution():
     body2 = _post(client, sid, "10")
     state2 = sm.get_state(sid)
 
-    assert state2.confirmed_entities.age == "10", (
+    assert state2.confirmed_entities.age == 10, (  # parse_slot_value converts age to int
         f"Age not confirmed — got {state2.confirmed_entities.age!r}"
     )
     # "10" should not be treated as a standalone new intent query
@@ -383,7 +383,7 @@ def test_e2e_7_turn2_advances_to_next_slot():
     _post(client, sid, "10")
 
     state = sm.get_state(sid)
-    assert state.confirmed_entities.age == "10"
+    assert state.confirmed_entities.age == 10  # parse_slot_value converts age to int
     # Should now be asking for sex or another slot
     resp2 = _post(client, sid, "10")
     direct = resp2["response"].get("direct_answer", "")

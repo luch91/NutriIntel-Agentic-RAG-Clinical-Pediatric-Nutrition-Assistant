@@ -107,7 +107,7 @@ def test_confirm_slot_moves_field_to_confirmed_entities(sm: StateManager) -> Non
     sm.save_state(state)
 
     updated = sm.confirm_slot("sess-slot", "age", "10")
-    assert updated.confirmed_entities.age == "10"
+    assert updated.confirmed_entities.age == 10  # parse_slot_value converts age to int
 
 
 def test_confirm_slot_removes_from_pending_slots(sm: StateManager) -> None:
@@ -143,21 +143,21 @@ def test_confirm_slot_none_value_reports_none(sm: StateManager) -> None:
     sm.save_state(state)
 
     updated = sm.confirm_slot("sess-meds3", "medications", "none")
-    assert updated.confirmed_entities.medications == ["none"]
+    assert updated.confirmed_entities.medications == []  # "none" → empty list via parse_slot_value
 
 
-@pytest.mark.parametrize("slot,value", [
-    ("sex", "female"),
-    ("weight", "25"),
-    ("height", "128"),
-    ("diagnosis", "cystic fibrosis"),
-    ("country", "NG"),
+@pytest.mark.parametrize("slot,raw,expected", [
+    ("sex", "female", "female"),
+    ("weight", "25", 25.0),         # parse_slot_value returns float kg
+    ("height", "128", 128.0),       # parse_slot_value returns float cm (bare number treated as cm)
+    ("diagnosis", "cystic fibrosis", "cystic_fibrosis"),  # normalized to routing key
+    ("country", "NG", "NG"),
 ])
-def test_confirm_slot_scalar_fields(sm: StateManager, slot: str, value: str) -> None:
+def test_confirm_slot_scalar_fields(sm: StateManager, slot: str, raw: str, expected) -> None:
     state = ConversationState.new(f"sess-scalar-{slot}")
     sm.save_state(state)
-    updated = sm.confirm_slot(f"sess-scalar-{slot}", slot, value)
-    assert getattr(updated.confirmed_entities, slot) == value
+    updated = sm.confirm_slot(f"sess-scalar-{slot}", slot, raw)
+    assert getattr(updated.confirmed_entities, slot) == expected
 
 
 # ---------------------------------------------------------------------------

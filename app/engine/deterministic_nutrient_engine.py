@@ -76,7 +76,9 @@ class DeterministicNutrientEngine:
         age_years = self._parse_age(patient.age)  # type: ignore[arg-type]
         weight_kg = float(patient.weight)          # type: ignore[arg-type]
         sex = patient.sex.strip().lower()           # type: ignore[union-attr]
-        diagnosis = patient.diagnosis.strip()       # type: ignore[union-attr]
+        # Convert routing key (e.g. "cystic_fibrosis") back to human form for
+        # substring matching in ConditionAdjustmentEngine._CONDITION_HANDLERS.
+        diagnosis = patient.diagnosis.strip().replace("_", " ")  # type: ignore[union-attr]
         country = (patient.country or "INT").strip().upper()
         medications = patient.medications or []
 
@@ -135,9 +137,11 @@ class DeterministicNutrientEngine:
             )
 
     @staticmethod
-    def _parse_age(age_str: str) -> float:
-        """Parse age strings like '8', '8 years', '18 months' into decimal years."""
-        s = age_str.strip().lower()
+    def _parse_age(age_str) -> float:
+        """Parse age values (int, float, or string like '8 years', '18 months') into decimal years."""
+        if isinstance(age_str, (int, float)):
+            return float(age_str)
+        s = str(age_str).strip().lower()
         if "month" in s:
             digits = "".join(c for c in s if c.isdigit() or c == ".")
             return float(digits) / 12.0 if digits else 0.0

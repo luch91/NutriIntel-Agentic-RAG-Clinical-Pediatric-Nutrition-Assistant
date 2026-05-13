@@ -33,7 +33,7 @@ from app.api.schemas import (
     ResetResponse,
     StateSnapshot,
 )
-from app.classification.intent_classifier import MockIntentClassifier
+from app.classification.intent_classifier import ClassificationResult, MockIntentClassifier
 from app.classification.intent_labels import CONFIDENCE_THRESHOLD, IntentLabel
 from app.contracts.display_adapter import DisplayAdapter, DisplayAdapterError
 from app.contracts.response_contracts import EvidenceSummary, GeneralResponse
@@ -43,7 +43,7 @@ from app.observability.metrics import (
     cpna_latency_seconds,
     cpna_requests_total,
 )
-from app.state.conversation_state import ConversationState
+from app.state.conversation_state import ConversationPhase, ConversationState
 from app.state.state_manager import ResolutionType, StateManager
 from app.workflows.comparison_workflow import WorkflowError
 from app.workflows.workflow_router import WorkflowRouter
@@ -174,124 +174,201 @@ async def chat(request: Request, body: ChatRequest) -> JSONResponse:
     # Step 1 — load / create state
     state: ConversationState = sm.get_state(body.session_id)
 
-    # Step 2 — classify intent
-    clf_result = classifier.classify(body.message)
-    intent_label = clf_result.label
-    confidence = clf_result.confidence
+    # Phase 4 — mid slot-fill: skip re-classification, route directly to therapy workflow
+    # This prevents "10 year old", "30kg", etc. from being misclassified as GENERAL.
+    if state.phase == ConversationPhase.SLOT_FILLING:
+        _workflow_routed_to = "slot_fill_continue"
+        preserved_label = state.active_task_context.current_intent or IntentLabel.THERAPY
+        clf_result = ClassificationResult(
+            label=preserved_label,
+            confidence=0.95,
+            all_scores={preserved_label.value: 0.95},
+            needs_clarification=False,
+        )
+        intent_label = clf_result.label
+        confidence = clf_result.confidence
+        # Fall through to step 3 (pending slots check) with the preserved intent.
+        goto_step3 = True
+    else:
+        goto_step3 = False
 
-    # Step 3 — check pending slots FIRST (loose reply takes priority over clarification)
-    # This ensures bare values like "10" are treated as slot fills, not ambiguous queries.
-    pending_slots = state.active_task_context.pending_slots
-    if pending_slots:
-        resolution = sm.resolve_loose_reply(body.session_id, body.message)
-        if resolution.resolution_type == ResolutionType.SLOT_FILL and resolution.resolved_slot:
-            state = sm.confirm_slot(
-                body.session_id,
-                resolution.resolved_slot,
-                resolution.resolved_value or body.message,
+    # Phase 5 — all slots confirmed: force therapy dispatch regardless of last classified intent
+    if state.phase == ConversationPhase.DISPATCHING:
+        _workflow_routed_to = "therapy_dispatch"
+        state.phase = ConversationPhase.RESPONDING
+        sm.save_state(state)
+        try:
+            workflow_result = router.route(
+                _force_therapy_state(state), body.message, sm
             )
-            # Re-load with preserved intent from prior turn
-            if state.active_task_context.current_intent is None:
-                state.active_task_context.current_intent = IntentLabel.THERAPY
-                sm.save_state(state)
-            intent_label = state.active_task_context.current_intent
-            confidence = 0.90
+        except Exception as exc:
+            log_error("therapy_dispatch", exc, session_id=body.session_id, request_id=request_id)
+            workflow_result = None
+        if workflow_result is not None:
+            # Jump straight to adapter step
+            goto_step3 = False
+            goto_dispatch = True
+        else:
+            goto_dispatch = False
+    else:
+        goto_dispatch = False
 
-    # Step 4 — needs clarification → return safe GeneralResponse (never HTTP 400)
-    # Skip if we just resolved a slot (intent_label set above).
-    if clf_result.needs_clarification and intent_label is None:
-        clarification_text = (
-            "I want to make sure I help you correctly — are you looking for personalized "
-            "nutrition planning, dietary guidance, a food comparison, or general nutrition "
-            "information?"
-        )
-        cpna_resp = _clarification_response(clarification_text)
-        state.clarification_needed = True
-        state.clarification_prompt = clarification_text
+    # Phase 7 — RECOMMENDATION → THERAPY handoff: user is following a CTA to provide patient data
+    if (
+        not goto_step3
+        and not goto_dispatch
+        and state.pending_intent == "therapy"
+        and state.phase == ConversationPhase.IDLE
+    ):
+        state.pending_intent = None
+        state.phase = ConversationPhase.SLOT_FILLING
+        if state.active_task_context.current_intent is None:
+            state.active_task_context.current_intent = IntentLabel.THERAPY
         sm.save_state(state)
+        # Re-enter as a THERAPY intent so TherapyWorkflow handles the turn
+        clf_result = ClassificationResult(
+            label=IntentLabel.THERAPY,
+            confidence=0.95,
+            all_scores={IntentLabel.THERAPY.value: 0.95},
+            needs_clarification=False,
+        )
+        intent_label = clf_result.label
+        confidence = clf_result.confidence
+        goto_step3 = True
 
-        latency_ms = (time.monotonic() - t_start) * 1000
-        _workflow_routed_to = "clarification"
-        cpna_requests_total.labels(query_type="unclear", status="clarification").inc()
-        log_request_summary(
-            session_id=body.session_id,
-            request_id=request_id,
-            intent="unclear",
-            intent_confidence=confidence,
-            workflow_routed_to=_workflow_routed_to,
-            retrieval_passage_count=0,
-            latency_ms=latency_ms,
-            downgrade_occurred=False,
-            error=None,
-        )
-        slog.info(
-            "chat",
-            session_id=body.session_id,
-            intent="unclear",
-            confidence=round(confidence, 3),
-            latency_ms=int(latency_ms),
-            outcome="clarification",
-        )
-        snapshot = _build_snapshot(state)
-        return JSONResponse(
-            content=ChatResponse(
+    if goto_dispatch:
+        # Therapy dispatch path — skip all classification and slot logic, jump to adapter
+        intent_label = IntentLabel.THERAPY
+        confidence = 0.95
+    else:
+        if not goto_step3:
+            # Step 2 — classify intent (normal path)
+            clf_result = classifier.classify(body.message)
+        intent_label = clf_result.label
+        confidence = clf_result.confidence
+
+    if not goto_dispatch:
+        # Step 3 — check pending slots FIRST (loose reply takes priority over clarification)
+        # This ensures bare values like "10" are treated as slot fills, not ambiguous queries.
+        pending_slots = state.active_task_context.pending_slots
+        if pending_slots:
+            resolution = sm.resolve_loose_reply(body.session_id, body.message)
+            if resolution.resolution_type == ResolutionType.SLOT_FILL and resolution.resolved_slot:
+                state = sm.confirm_slot(
+                    body.session_id,
+                    resolution.resolved_slot,
+                    resolution.resolved_value or body.message,
+                )
+                # Re-load with preserved intent from prior turn
+                if state.active_task_context.current_intent is None:
+                    state.active_task_context.current_intent = IntentLabel.THERAPY
+                    sm.save_state(state)
+                intent_label = state.active_task_context.current_intent
+                confidence = 0.90
+
+                # If no slots remain and phase is SLOT_FILLING, advance to DISPATCHING
+                if (
+                    state.phase == ConversationPhase.SLOT_FILLING
+                    and not state.active_task_context.pending_slots
+                ):
+                    state.phase = ConversationPhase.DISPATCHING
+                    sm.save_state(state)
+
+        # Step 4 — needs clarification → return safe GeneralResponse (never HTTP 400)
+        # Skip if we just resolved a slot (intent_label set above).
+        if clf_result.needs_clarification and intent_label is None:
+            clarification_text = (
+                "I want to make sure I help you correctly — are you looking for personalized "
+                "nutrition planning, dietary guidance, a food comparison, or general nutrition "
+                "information?"
+            )
+            cpna_resp = _clarification_response(clarification_text)
+            state.clarification_needed = True
+            state.clarification_prompt = clarification_text
+            sm.save_state(state)
+
+            latency_ms = (time.monotonic() - t_start) * 1000
+            _workflow_routed_to = "clarification"
+            cpna_requests_total.labels(query_type="unclear", status="clarification").inc()
+            log_request_summary(
                 session_id=body.session_id,
-                response=cpna_resp.model_dump(),
-                state_snapshot=snapshot,
-            ).model_dump()
-        )
+                request_id=request_id,
+                intent="unclear",
+                intent_confidence=confidence,
+                workflow_routed_to=_workflow_routed_to,
+                retrieval_passage_count=0,
+                latency_ms=latency_ms,
+                downgrade_occurred=False,
+                error=None,
+            )
+            slog.info(
+                "chat",
+                session_id=body.session_id,
+                intent="unclear",
+                confidence=round(confidence, 3),
+                latency_ms=int(latency_ms),
+                outcome="clarification",
+            )
+            snapshot = _build_snapshot(state)
+            return JSONResponse(
+                content=ChatResponse(
+                    session_id=body.session_id,
+                    response=cpna_resp.model_dump(),
+                    state_snapshot=snapshot,
+                ).model_dump()
+            )
 
-    # Step 5 — update intent in state
-    assert intent_label is not None  # guaranteed: either classified or inherited from slot resolution
-    state = sm.update_intent(body.session_id, intent_label, confidence)
-    _workflow_routed_to = intent_label.value
+        # Step 5 — update intent in state
+        assert intent_label is not None  # guaranteed: either classified or inherited from slot resolution
+        state = sm.update_intent(body.session_id, intent_label, confidence)
+        _workflow_routed_to = intent_label.value
 
-    # Step 6 — route
-    log_pipeline_event(
-        "intent_classified",
-        session_id=body.session_id,
-        request_id=request_id,
-        intent=intent_label.value,
-        confidence=round(confidence, 4),
-    )
-
-    try:
-        workflow_result = router.route(state, body.message, sm)
-    except WorkflowError as exc:
-        log_error(
-            "workflow_routing",
-            exc,
+        # Step 6 — route
+        log_pipeline_event(
+            "intent_classified",
             session_id=body.session_id,
             request_id=request_id,
             intent=intent_label.value,
+            confidence=round(confidence, 4),
         )
-        cpna_resp = _clarification_response(
-            "I couldn't identify the items you'd like to compare. "
-            "Please try: 'Compare X vs Y' or 'Compare X to Y'."
-        )
-        sm.save_state(state)
-        latency_ms = (time.monotonic() - t_start) * 1000
-        _error = "WorkflowError"
-        cpna_requests_total.labels(query_type=intent_label.value, status="error").inc()
-        log_request_summary(
-            session_id=body.session_id,
-            request_id=request_id,
-            intent=intent_label.value,
-            intent_confidence=confidence,
-            workflow_routed_to=_workflow_routed_to,
-            retrieval_passage_count=0,
-            latency_ms=latency_ms,
-            downgrade_occurred=False,
-            error=_error,
-        )
-        snapshot = _build_snapshot(state)
-        return JSONResponse(
-            content=ChatResponse(
+
+        try:
+            workflow_result = router.route(state, body.message, sm)
+        except WorkflowError as exc:
+            log_error(
+                "workflow_routing",
+                exc,
                 session_id=body.session_id,
-                response=cpna_resp.model_dump(),
-                state_snapshot=snapshot,
-            ).model_dump()
-        )
+                request_id=request_id,
+                intent=intent_label.value,
+            )
+            cpna_resp = _clarification_response(
+                "I couldn't identify the items you'd like to compare. "
+                "Please try: 'Compare X vs Y' or 'Compare X to Y'."
+            )
+            sm.save_state(state)
+            latency_ms = (time.monotonic() - t_start) * 1000
+            _error = "WorkflowError"
+            cpna_requests_total.labels(query_type=intent_label.value, status="error").inc()
+            log_request_summary(
+                session_id=body.session_id,
+                request_id=request_id,
+                intent=intent_label.value,
+                intent_confidence=confidence,
+                workflow_routed_to=_workflow_routed_to,
+                retrieval_passage_count=0,
+                latency_ms=latency_ms,
+                downgrade_occurred=False,
+                error=_error,
+            )
+            snapshot = _build_snapshot(state)
+            return JSONResponse(
+                content=ChatResponse(
+                    session_id=body.session_id,
+                    response=cpna_resp.model_dump(),
+                    state_snapshot=snapshot,
+                ).model_dump()
+            )
 
     # Track passage count and downgrade from workflow result
     evidence = workflow_result.response_data.get("evidence", [])
@@ -324,10 +401,19 @@ async def chat(request: Request, body: ChatRequest) -> JSONResponse:
 
     # Step 8 — save state
     updated = workflow_result.updated_state
-    if updated is not None:
-        sm.save_state(updated)
-    else:
-        sm.save_state(state)
+    final_for_save = updated if updated is not None else state
+
+    # After a full therapy response, reset phase so the next unrelated turn starts clean
+    if (
+        intent_label == IntentLabel.THERAPY
+        and not (workflow_result.requires_slot_fill)
+        and _workflow_routed_to in ("therapy", "therapy_dispatch")
+        and not _error
+    ):
+        final_for_save.phase = ConversationPhase.IDLE
+        final_for_save.pending_intent = None
+
+    sm.save_state(final_for_save)
 
     # Step 9 — emit metrics + structured log + return
     latency_ms = (time.monotonic() - t_start) * 1000
@@ -357,8 +443,7 @@ async def chat(request: Request, body: ChatRequest) -> JSONResponse:
         outcome=status,
     )
 
-    final_state = updated if updated is not None else state
-    snapshot = _build_snapshot(final_state)
+    snapshot = _build_snapshot(final_for_save)
     return JSONResponse(
         content=ChatResponse(
             session_id=body.session_id,
@@ -415,6 +500,14 @@ async def metrics():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _force_therapy_state(state: ConversationState) -> ConversationState:
+    """Return a copy of state with current_intent forced to THERAPY and high confidence."""
+    copy = state.model_copy(deep=True)
+    copy.active_task_context.current_intent = IntentLabel.THERAPY
+    copy.intent_confidence = 0.95
+    return copy
+
 
 def _build_snapshot(state: ConversationState) -> StateSnapshot:
     ctx = state.active_task_context

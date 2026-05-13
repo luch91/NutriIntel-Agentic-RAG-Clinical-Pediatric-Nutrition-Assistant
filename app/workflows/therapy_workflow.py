@@ -26,7 +26,7 @@ from app.agents.slot_filling_agent import SlotFillingAgent
 from app.agents.therapy_gatekeeper_agent import TherapyGatekeeperAgent
 from app.classification.intent_labels import IntentLabel
 from app.engine.deterministic_nutrient_engine import DeterministicNutrientEngine
-from app.state.conversation_state import ConversationState, TurnEntities
+from app.state.conversation_state import ConversationPhase, ConversationState, TurnEntities
 from app.state.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
@@ -107,8 +107,11 @@ class TherapyWorkflow:
         # Step 3a — missing slots
         if not decision.can_proceed and decision.missing_slots:
             prompt = self._slot_filler.generate_slot_prompt(decision.missing_slots, state)
-            # Persist pending_slots so loose-reply resolution works on next turn
+            # Persist pending_slots and enter SLOT_FILLING phase
             state.active_task_context.pending_slots = decision.missing_slots
+            state.phase = ConversationPhase.SLOT_FILLING
+            if state.active_task_context.current_intent is None:
+                state.active_task_context.current_intent = IntentLabel.THERAPY
             state_manager.save_state(state)
             return WorkflowResult(
                 response_data={"slot_prompt": prompt},

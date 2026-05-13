@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict, Optional
 from app.classification.intent_labels import IntentLabel
 from app.engine.dri_lookup import DRILookup, DRINotFoundError
-from app.state.conversation_state import ConversationState
+from app.state.conversation_state import ConversationPhase, ConversationState
 from app.state.state_manager import StateManager
 from app.workflows.therapy_workflow import WorkflowResult
 
@@ -86,6 +86,11 @@ class RecommendationWorkflow:
 
         if downgraded_from_therapy:
             response_data["therapy_upgrade_note"] = _THERAPY_UPGRADE_NOTE
+        else:
+            # Signal that the next user turn should be treated as therapy initiation
+            # if they follow the upgrade CTA.
+            state.pending_intent = "therapy"
+            state_manager.save_state(state)
 
         return WorkflowResult(
             response_data=response_data,

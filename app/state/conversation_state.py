@@ -13,6 +13,13 @@ from pydantic import BaseModel, Field
 # Enums
 # ---------------------------------------------------------------------------
 
+class ConversationPhase(str, Enum):
+    IDLE        = "idle"
+    SLOT_FILLING = "slot_filling"
+    DISPATCHING  = "dispatching"
+    RESPONDING   = "responding"
+
+
 class IntentLabel(str, Enum):
     THERAPY = "therapy"
     RECOMMENDATION = "recommendation"
@@ -78,10 +85,11 @@ class ExtractedEntities(BaseModel):
 
 class ConfirmedEntities(BaseModel):
     """Confirmed and validated patient data — used by therapy engine."""
-    age: Optional[str] = None
+    # age/weight/height accept str or numeric (parse_slot_value normalizes at write time)
+    age: Optional[Any] = None
     sex: Optional[str] = None
-    weight: Optional[str] = None
-    height: Optional[str] = None
+    weight: Optional[Any] = None
+    height: Optional[Any] = None
     diagnosis: Optional[str] = None
     medications: Optional[List[str]] = None
     biomarkers: Optional[Dict[str, str]] = None
@@ -141,6 +149,10 @@ class ConversationState(BaseModel):
     # Evidence from current retrieval turn
     current_turn_evidence: List[EvidenceItem] = Field(default_factory=list)
 
+    # Conversation phase — drives phase-aware routing (Fix 4-8)
+    phase: ConversationPhase = ConversationPhase.IDLE
+    pending_intent: Optional[str] = None
+
     # Turn counter
     turn_count: int = 0
 
@@ -173,6 +185,8 @@ class ConversationState(BaseModel):
         self.last_assistant_prompt_type = None
         self.current_turn_evidence = []
         self.debug_trace_internal = {}
+        self.phase = ConversationPhase.IDLE
+        self.pending_intent = None
 
     def is_therapy_eligible(self) -> bool:
         """
