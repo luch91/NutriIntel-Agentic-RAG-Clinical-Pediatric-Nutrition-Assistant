@@ -21,8 +21,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CPNA — Clinical Pediatric Nutrition Assistant",
-  description: "Agentic RAG clinical nutrition support for paediatric patients.",
+  title: "NutriIntel — Clinical Pediatric Nutrition Assistant",
+  description: "Agentic RAG AI for pediatric clinical nutrition — evidence-based answers, therapy planning, and food comparisons grounded in international guidelines.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -26,17 +26,18 @@ export function InputBar({ onSend, disabled }: Props) {
     }
   };
 
+  const canSend = !disabled && value.trim().length > 0;
+
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "0.5rem",
-        padding: "0.75rem 1rem",
-        borderTop: "1px solid #E5E3DF",
-        background: "#F7F6F3",
-        alignItems: "flex-end",
-      }}
-    >
+    <div style={{
+      display: "flex", gap: "0.6rem",
+      padding: "0.85rem 1rem 1rem",
+      borderTop: "1px solid rgba(30,45,74,0.7)",
+      background: "rgba(10,14,26,0.95)",
+      backdropFilter: "blur(12px)",
+      alignItems: "flex-end",
+      flexShrink: 0,
+    }}>
       <textarea
         ref={ref}
         value={value}
@@ -46,39 +47,45 @@ export function InputBar({ onSend, disabled }: Props) {
         placeholder="Ask about pediatric nutrition..."
         rows={1}
         style={{
-          flex: 1,
-          resize: "none",
-          border: "1px solid #E5E3DF",
-          borderRadius: "8px",
+          flex: 1, resize: "none",
+          border: `1px solid ${canSend ? "rgba(0,255,148,0.3)" : "rgba(30,45,74,0.8)"}`,
+          borderRadius: "10px",
           padding: "10px 14px",
           fontSize: "0.9rem",
           fontFamily: "var(--font-body)",
-          background: disabled ? "#EDECEA" : "#FFFFFF",
-          color: "#1C1C1A",
+          background: disabled ? "rgba(15,21,37,0.5)" : "rgba(15,21,37,0.9)",
+          color: "#E8EDF5",
           outline: "none",
           lineHeight: 1.5,
-          minHeight: "42px",
-          maxHeight: "120px",
+          minHeight: "44px", maxHeight: "120px",
           overflowY: "auto",
+          transition: "border-color 0.2s",
+          caretColor: "#00FF94",
         }}
       />
       <button
         onClick={submit}
-        disabled={disabled || !value.trim()}
+        disabled={!canSend}
         aria-label="Send message"
         style={{
-          background: disabled || !value.trim() ? "#B2DFDB" : "#00796B",
-          color: "#fff",
+          background: canSend
+            ? "linear-gradient(135deg, #00FF94, #00CC76)"
+            : "rgba(30,45,74,0.6)",
+          color: canSend ? "#0A0E1A" : "#4A5878",
           border: "none",
-          borderRadius: "8px",
+          borderRadius: "10px",
           padding: "10px 18px",
-          fontSize: "0.9rem",
+          fontSize: "0.875rem",
           fontFamily: "var(--font-body)",
-          cursor: disabled || !value.trim() ? "not-allowed" : "pointer",
-          fontWeight: 600,
-          transition: "background 0.15s",
+          cursor: canSend ? "pointer" : "not-allowed",
+          fontWeight: 700,
+          transition: "all 0.15s",
           flexShrink: 0,
+          boxShadow: canSend ? "0 0 16px rgba(0,255,148,0.3)" : "none",
+          minWidth: "70px",
         }}
+        onMouseEnter={e => { if (canSend) (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(0,255,148,0.5)"; }}
+        onMouseLeave={e => { if (canSend) (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(0,255,148,0.3)"; }}
       >
         Send
       </button>

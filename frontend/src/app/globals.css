@@ -1,30 +1,47 @@
-/* CPNA design system — global CSS variables and base reset */
+/* NutriIntel design system — dark theme matching eval platform */
 
 :root {
-  --color-bg: #F7F6F3;
-  --color-text: #1C1C1A;
-  --color-accent: #00796B;
-  --color-bubble-assistant: #FFFFFF;
-  --color-bubble-user: #E8F5F3;
-  --color-border: #E5E3DF;
+  /* Core palette — matches eval platform */
+  --ni-bg:           #0A0E1A;
+  --ni-surface:      #0F1525;
+  --ni-surface-2:    #141C30;
+  --ni-border:       #1E2D4A;
+  --ni-border-2:     #243558;
+  --ni-green:        #00FF94;
+  --ni-green-dim:    #00CC76;
+  --ni-green-glow:   rgba(0, 255, 148, 0.15);
+  --ni-green-glow2:  rgba(0, 255, 148, 0.06);
+  --ni-text:         #E8EDF5;
+  --ni-text-dim:     #8B9BB4;
+  --ni-text-muted:   #4A5878;
+  --ni-purple:       #7C4DFF;
+  --ni-purple-dim:   rgba(124, 77, 255, 0.15);
+  --ni-gold:         #FFB547;
+  --ni-red:          #FF5252;
+
+  /* Chat-specific */
+  --color-bg:              var(--ni-bg);
+  --color-text:            var(--ni-text);
+  --color-accent:          var(--ni-green);
+  --color-bubble-user:     #0F2040;
+  --color-bubble-assistant: var(--ni-surface);
+  --color-border:          var(--ni-border);
 }
 
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html,
-body {
+html, body {
   height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--ni-bg);
+  color: var(--ni-text);
   font-family: var(--font-body, "DM Sans", system-ui, sans-serif);
   font-size: 16px;
   line-height: 1.5;
@@ -32,20 +49,57 @@ body {
 }
 
 /* Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ni-border-2); border-radius: 3px; }
+
+/* ─── Keyframe animations ─── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-::-webkit-scrollbar-thumb {
-  background: #D0CEC9;
-  border-radius: 3px;
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px var(--ni-green-glow); }
+  50%       { box-shadow: 0 0 40px rgba(0,255,148,0.3), 0 0 60px rgba(0,255,148,0.1); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%            { transform: translateY(-6px); opacity: 1; }
+}
+@keyframes grid-flow {
+  0%   { background-position: 0 0; }
+  100% { background-position: 60px 60px; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes rotate-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes counter-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
 }
 
-/* Mobile responsive */
+/* Mobile */
 @media (max-width: 600px) {
-  body {
-    font-size: 15px;
-  }
+  body { font-size: 15px; }
 }

@@ -10,33 +10,29 @@ interface Props {
 
 function ResponseCard({ response }: { response: CPNAResponse }) {
   switch (response.query_type) {
-    case "therapy":
-      return <TherapyCard data={response} />;
-    case "recommendation":
-      return <RecommendationCard data={response} />;
-    case "comparison":
-      return <ComparisonCard data={response} />;
-    case "general":
-      return <GeneralCard data={response} />;
+    case "therapy":      return <TherapyCard data={response} />;
+    case "recommendation": return <RecommendationCard data={response} />;
+    case "comparison":   return <ComparisonCard data={response} />;
+    case "general":      return <GeneralCard data={response} />;
   }
 }
 
 export function MessageBubble({ message }: Props) {
   if (message.role === "user") {
     return (
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
-        <div
-          style={{
-            background: "#E8F5F3",
-            color: "#1C1C1A",
-            borderRadius: "16px 16px 4px 16px",
-            padding: "10px 16px",
-            maxWidth: "72%",
-            fontSize: "0.9rem",
-            fontFamily: "var(--font-body)",
-            lineHeight: 1.5,
-          }}
-        >
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "1rem" }}>
+        <div style={{
+          background: "linear-gradient(135deg, #0F2040, #0A1830)",
+          color: "#E8EDF5",
+          borderRadius: "16px 16px 4px 16px",
+          padding: "10px 16px",
+          maxWidth: "72%",
+          fontSize: "0.9rem",
+          fontFamily: "var(--font-body)",
+          lineHeight: 1.5,
+          border: "1px solid rgba(0,255,148,0.15)",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+        }}>
           {typeof message.content === "string" ? message.content : null}
         </div>
       </div>
@@ -44,21 +40,30 @@ export function MessageBubble({ message }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "0.75rem" }}>
-      <div
-        style={{
-          background: "#FFFFFF",
-          border: "1px solid #E5E3DF",
-          borderRadius: "4px 16px 16px 16px",
-          padding: "14px 18px",
-          maxWidth: "88%",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
-          fontFamily: "var(--font-body)",
-          lineHeight: 1.55,
-          fontSize: "0.9rem",
-          color: "#1C1C1A",
-        }}
-      >
+    <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "1rem" }}>
+      {/* Assistant avatar dot */}
+      <div style={{
+        width: 28, height: 28, borderRadius: "8px", flexShrink: 0,
+        background: "rgba(0,255,148,0.08)",
+        border: "1px solid rgba(0,255,148,0.2)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        marginRight: "0.5rem", marginTop: "2px",
+      }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#00FF94", boxShadow: "0 0 6px #00FF94" }}/>
+      </div>
+
+      <div style={{
+        background: "rgba(15,21,37,0.95)",
+        border: "1px solid rgba(30,45,74,0.9)",
+        borderRadius: "4px 16px 16px 16px",
+        padding: "14px 18px",
+        maxWidth: "calc(88% - 36px)",
+        boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
+        fontFamily: "var(--font-body)",
+        lineHeight: 1.55,
+        fontSize: "0.9rem",
+        color: "#E8EDF5",
+      }}>
         {typeof message.content === "string" ? (
           <p style={{ margin: 0 }}>{message.content}</p>
         ) : (
