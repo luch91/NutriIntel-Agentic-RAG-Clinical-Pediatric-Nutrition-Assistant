@@ -1,37 +1,41 @@
-# Virtual environments
+# Virtual environment — largest exclusion (~3GB)
 rag_env/
 .venv/
 venv/
 env/
 
-# Frontend (deployed separately)
+# Tests and training (not needed at runtime)
+app/tests/
+app/training/
+app/common/data/
+
+# Frontend (separate Vercel project)
 frontend/
 
-# Knowledge base source documents (large PDFs)
-app/common/data/*.pdf
-app/common/data/*.PDF
-app/common/data/*.epub
-
-# Model artifacts (too large — use mock classifier on Vercel)
+# Large model artifacts
 app/models/intent_classifier/embedding_model/
 app/models/intent_classifier/*.pkl
 
-# Test files (not needed in production)
-app/tests/
-app/training/
-
-# Internal tool state
-.claude/
-.qwen/
-
-# Misc
+# Dev artifacts
+.pytest_cache/
 __pycache__/
-*.py[cod]
-*.log
+*.pyc
+*.pyo
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Misc large/sensitive files
+prompts.txt
+CPNA_v1_Claude_Code_Prompt_Pack_v2.md
+CPNA_Development_Log.md
+CPNA_Architecture_Document.md
 qdrant_data/
 dump.rdb
-.pytest_cache/
-.coverage
-cpna/
-prompts.txt
-test.py
+.env
+.claude/
+.qwen/
+requirements-vercel.txt
