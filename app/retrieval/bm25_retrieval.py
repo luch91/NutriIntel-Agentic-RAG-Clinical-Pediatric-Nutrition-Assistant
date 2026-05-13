@@ -11,9 +11,10 @@ import logging
 import re
 from typing import List
 
-from rank_bm25 import BM25Okapi
-
 from app.retrieval import EnrichedPassage, RetrievedPassage
+
+# rank_bm25 import is deferred to first use so this module is safe to import
+# on Vercel where rank_bm25 may not be installed.
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class BM25Retriever:
 
     def __init__(self) -> None:
         self._passages: List[EnrichedPassage] = []
-        self._index: BM25Okapi | None = None
+        self._index: object | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -41,6 +42,7 @@ class BM25Retriever:
 
     def add_corpus(self, passages: List[EnrichedPassage]) -> None:
         """Add passages and (re)build the BM25 index."""
+        from rank_bm25 import BM25Okapi
         if not passages:
             return
         self._passages.extend(passages)

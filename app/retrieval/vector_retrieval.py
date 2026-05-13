@@ -10,15 +10,10 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import (
-    Distance,
-    PointStruct,
-    VectorParams,
-)
-from sentence_transformers import SentenceTransformer
-
 from app.retrieval import EnrichedPassage, RetrievedPassage
+
+# Heavy ML/Qdrant imports are deferred to first use (inside __init__/methods)
+# so this module is safe to import on Vercel without torch/qdrant installed.
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +32,12 @@ class VectorRetriever:
 
     def __init__(
         self,
-        qdrant_client: Optional[QdrantClient] = None,
-        model: Optional[SentenceTransformer] = None,
+        qdrant_client: Optional[object] = None,
+        model: Optional[object] = None,
     ) -> None:
+        from qdrant_client import QdrantClient
+        from qdrant_client.http.models import Distance, VectorParams
+        from sentence_transformers import SentenceTransformer
         self._client = qdrant_client or QdrantClient(":memory:")
         self._model = model or SentenceTransformer(_MODEL_NAME)
         self._ensure_collection()
@@ -49,6 +47,7 @@ class VectorRetriever:
     # ------------------------------------------------------------------
 
     def _ensure_collection(self) -> None:
+        from qdrant_client.http.models import Distance, VectorParams
         existing = {c.name for c in self._client.get_collections().collections}
         if _COLLECTION not in existing:
             self._client.create_collection(
@@ -62,6 +61,7 @@ class VectorRetriever:
 
     def index(self, passages: List[EnrichedPassage]) -> None:
         """Embed passages that lack embeddings, then upsert into Qdrant."""
+        from qdrant_client.http.models import PointStruct
         if not passages:
             return
 
