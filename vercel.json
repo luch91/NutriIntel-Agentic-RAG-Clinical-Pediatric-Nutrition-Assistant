@@ -3,11 +3,7 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb",
-        "runtime": "python3.11"
-      }
+      "use": "@vercel/python"
     }
   ],
   "routes": [
@@ -19,11 +15,5 @@
       "src": "/metrics",
       "dest": "/api/index.py"
     }
-  ],
-  "env": {
-    "REDIS_URL": "@redis_url",
-    "QDRANT_URL": "@qdrant_url",
-    "QDRANT_COLLECTION": "@qdrant_collection",
-    "EVAL_SECRET": "@eval_secret"
-  }
+  ]
 }
