@@ -3,7 +3,9 @@ StateManager — the single gateway for reading and writing ConversationState.
 
 All agents use this class. No agent ever touches ConversationState directly.
 
-Backend : Redis via redis-py
+Backend : Redis via redis-py (uses REDIS_URL env var when set)
+          Falls back to an in-process dict store when Redis is unavailable,
+          so the app starts cleanly on Vercel without a Redis addon.
 Key     : cpna:state:{session_id}
 TTL     : 3600 s
 Codec   : state.model_dump_json() / ConversationState.model_validate_json()
@@ -12,8 +14,10 @@ Codec   : state.model_dump_json() / ConversationState.model_validate_json()
 from __future__ import annotations
 
 import logging
+import os
+import time
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple, Union, cast
 
 import redis as redis_lib
 from pydantic import BaseModel
@@ -68,19 +72,59 @@ class ContextInheritanceDecision(BaseModel):
 _CONFIRMATION_WORDS = {"yes", "ok", "sure", "go ahead", "proceed"}
 
 
+class _InMemoryStore:
+    """In-process dict store used when Redis is unavailable (e.g. Vercel cold-start)."""
+
+    def __init__(self) -> None:
+        self._data: Dict[str, Tuple[bytes, float]] = {}
+
+    def get(self, key: str) -> Optional[bytes]:
+        entry = self._data.get(key)
+        if entry is None:
+            return None
+        value, expires_at = entry
+        if expires_at and time.time() > expires_at:
+            del self._data[key]
+            return None
+        return value
+
+    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+        expires_at = time.time() + ex if ex else 0.0
+        self._data[key] = (value.encode() if isinstance(value, str) else value, expires_at)
+
+    def delete(self, key: str) -> None:
+        self._data.pop(key, None)
+
+
+def _build_redis_client(redis_client: Optional[redis_lib.Redis]) -> Union[redis_lib.Redis, _InMemoryStore]:
+    """Return the provided client, a URL-configured client, or an in-memory fallback."""
+    if redis_client is not None:
+        return redis_client
+    redis_url = os.environ.get("REDIS_URL", "")
+    if redis_url:
+        try:
+            client = redis_lib.Redis.from_url(redis_url, decode_responses=False)
+            client.ping()
+            logger.info("StateManager: connected to Redis via REDIS_URL")
+            return client
+        except Exception as exc:
+            logger.warning("StateManager: Redis URL unreachable (%s), using in-memory store", exc)
+    else:
+        logger.info("StateManager: no REDIS_URL set, using in-memory store")
+    return _InMemoryStore()
+
+
 class StateManager:
     """
     All state reads and writes go through this class.
 
     Pass a redis.Redis (or fakeredis.FakeRedis) client on construction.
-    Defaults to localhost:6379 when no client is supplied.
+    When no client is given, checks REDIS_URL env var, then falls back
+    to an in-process dict store so the app starts cleanly on Vercel.
     """
 
     def __init__(self, redis_client: Optional[redis_lib.Redis] = None) -> None:
-        if redis_client is not None:
-            self._redis = redis_client
-        else:
-            self._redis = redis_lib.Redis(host="localhost", port=6379, db=0)
+        self._redis = _build_redis_client(redis_client)
 
     # -----------------------------------------------------------------------
     # Internal helpers
@@ -90,10 +134,11 @@ class StateManager:
         return f"{_STATE_KEY_PREFIX}{session_id}"
 
     def _load(self, session_id: str) -> ConversationState:
-        raw = self._redis.get(self._key(session_id))
+        raw = cast(Optional[bytes], self._redis.get(self._key(session_id)))
         if raw is None:
             return ConversationState.new(session_id)
-        return ConversationState.model_validate_json(raw)
+        data: str = raw.decode() if isinstance(raw, bytes) else raw
+        return ConversationState.model_validate_json(data)
 
     def _save(self, state: ConversationState) -> None:
         self._redis.set(
