@@ -15,6 +15,7 @@ Middleware:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 import uuid
@@ -58,13 +59,28 @@ _VERSION = "1.0.0"
 _SAFE_ERROR_RESPONSE = "Something went wrong. Please try again."
 _SAFE_ADAPTER_ANSWER = "I wasn't able to format a complete response for that query."
 
+
+@contextlib.asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+    """Run ingestion once at startup, then yield to serve requests."""
+    try:
+        from app.retrieval.startup_ingestion import get_retrieval_agent
+        agent = get_retrieval_agent()
+        fastapi_app.state.retrieval_agent = agent
+    except Exception as exc:
+        logger.error("lifespan: startup ingestion failed — retrieval will be unavailable: %s", exc)
+        fastapi_app.state.retrieval_agent = None
+    yield
+    # shutdown — nothing to tear down for in-memory stores
+
+
 # ---------------------------------------------------------------------------
 # Application-level singletons
 # All heavy components are created once at startup.
 # Tests replace these via dependency injection / monkeypatching on app.state.
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="CPNA v1", version=_VERSION)
+app = FastAPI(title="CPNA v1", version=_VERSION, lifespan=lifespan)
 
 # These are overrideable in tests via app.state.*
 app.state.intent_classifier = None   # set lazily or by tests
@@ -87,7 +103,8 @@ def _get_state_manager() -> StateManager:
 
 def _get_router() -> WorkflowRouter:
     if app.state.workflow_router is None:
-        app.state.workflow_router = WorkflowRouter(retrieval_agent=None)
+        retrieval_agent = getattr(app.state, "retrieval_agent", None)
+        app.state.workflow_router = WorkflowRouter(retrieval_agent=retrieval_agent)
     return app.state.workflow_router
 
 

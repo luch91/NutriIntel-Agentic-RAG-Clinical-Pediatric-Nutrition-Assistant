@@ -31,15 +31,62 @@ class WorkflowError(Exception):
     pass
 
 
-def _extract_compared_entities(user_message: str) -> List[str]:
-    """Extract up to two compared items from 'X vs Y' or 'X compared to Y' patterns."""
-    vs_match = re.search(
-        r"(?:compare\s+)?(.+?)\s+(?:vs\.?|versus|compared (?:to|with)|to|and)\s+(.+)",
-        user_message,
-        re.IGNORECASE,
+def extract_comparison_entities(
+    query: str,
+) -> tuple[str, str, Optional[str]]:
+    """
+    Extracts two food/nutrient entities and an optional comparison dimension.
+
+    Returns:
+        (entity1, entity2, dimension)
+        e.g. ("bambara nut", "groundnut", "zinc content")
+
+    Handles:
+        "compare X vs Y"
+        "X vs Y for Z"
+        "X versus Y in terms of Z"
+        "compare X and Y"
+    """
+    q = query.strip()
+    q = re.sub(r"^compare\s+", "", q, flags=re.IGNORECASE).strip()
+
+    parts = re.split(
+        r"\s+vs\.?\s+|\s+versus\s+|\s+and\s+",
+        q,
+        maxsplit=1,
+        flags=re.IGNORECASE,
     )
-    if vs_match:
-        return [vs_match.group(1).strip(), vs_match.group(2).strip()]
+
+    if len(parts) != 2:
+        return q, "", None
+
+    entity1 = parts[0].strip()
+    entity2_raw = parts[1].strip()
+
+    dimension_match = re.search(
+        r"\s+(?:for|in terms of|regarding|with respect to|"
+        r"in relation to|when it comes to|by)\s+(.+)$",
+        entity2_raw,
+        flags=re.IGNORECASE,
+    )
+    dimension = dimension_match.group(1).strip() if dimension_match else None
+
+    entity2 = re.sub(
+        r"\s+(?:for|in terms of|regarding|with respect to|"
+        r"in relation to|when it comes to|by)\s+.+$",
+        "",
+        entity2_raw,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    return entity1, entity2, dimension
+
+
+def _extract_compared_entities(user_message: str) -> List[str]:
+    """Thin wrapper kept for backward compat — delegates to extract_comparison_entities."""
+    entity1, entity2, _dimension = extract_comparison_entities(user_message)
+    if entity2:
+        return [entity1, entity2]
     return []
 
 
@@ -54,19 +101,18 @@ class ComparisonWorkflow:
         user_message: str,
         state_manager: StateManager,
     ) -> WorkflowResult:
-        # Extract compared entities
-        entities = _extract_compared_entities(user_message)
-        if len(entities) < 2:
+        # Extract compared entities and optional dimension
+        entity_a, entity_b, dimension = extract_comparison_entities(user_message)
+        if not entity_b:
             # Fall back to turn_entities if extraction failed
             entities = list(state.turn_entities.compared_entities)
-
-        if len(entities) < 2:
-            raise WorkflowError(
-                "Could not identify two items to compare. "
-                "Please use phrasing like 'X vs Y' or 'compare X with Y'."
-            )
-
-        entity_a, entity_b = entities[0], entities[1]
+            if len(entities) < 2:
+                raise WorkflowError(
+                    "Could not identify two items to compare. "
+                    "Please use phrasing like 'X vs Y' or 'compare X with Y'."
+                )
+            entity_a, entity_b = entities[0], entities[1]
+            dimension = None
 
         if _PLACEHOLDER_RE.match(entity_a) or _PLACEHOLDER_RE.match(entity_b):
             raise WorkflowError(
@@ -88,15 +134,23 @@ class ComparisonWorkflow:
         # Determine comparison mode
         comparison_mode = "quantitative" if _QUANTITY_RE.search(user_message) else "qualitative"
 
-        # Retrieval for both entities
+        # Retrieval — separate queries per entity, enriched with dimension
         evidence_passages = []
         if self._retrieval is not None:
             try:
-                retrieval_result = self._retrieval.retrieve(user_message)
-                evidence_passages = [
-                    {"source_title": p.source_title, "excerpt": p.text[:300]}
-                    for p in retrieval_result.passages
+                query_a = f"{entity_a} {dimension}" if dimension else entity_a
+                query_b = f"{entity_b} {dimension}" if dimension else entity_b
+                result_a = self._retrieval.retrieve(query_a)
+                result_b = self._retrieval.retrieve(query_b)
+                passages_a = [
+                    {"source_title": p.source_title, "excerpt": p.text[:300], "entity": entity_a}
+                    for p in result_a.passages
                 ]
+                passages_b = [
+                    {"source_title": p.source_title, "excerpt": p.text[:300], "entity": entity_b}
+                    for p in result_b.passages
+                ]
+                evidence_passages = passages_a + passages_b
             except Exception as exc:
                 logger.warning("ComparisonWorkflow: retrieval failed — %s", exc)
 
@@ -104,6 +158,7 @@ class ComparisonWorkflow:
             "query_type": "comparison",
             "entity_a": entity_a,
             "entity_b": entity_b,
+            "dimension": dimension,
             "comparison_mode": comparison_mode,
             "context_inherited": inheritance.inherit,
             "inherited_fields": inheritance.fields_to_inherit,

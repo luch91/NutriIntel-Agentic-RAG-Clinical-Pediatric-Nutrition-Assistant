@@ -33,6 +33,22 @@ _BM25_TOP_K = 20
 _RERANK_TOP_K = 7
 
 
+def _source_matches(passage: "RetrievedPassage", source_id: str) -> bool:
+    """
+    Match a retrieved passage against a routing source_id.
+
+    passage_id is a 16-char MD5 hex and cannot encode the source. Instead we
+    compare source_title (set from metadata["source"] during ingestion) against
+    the routing source_id, normalising case and separators so that e.g.
+    "WestAfricaFCT2019" matches source_title "WestAfricaFCT2019" or
+    "West Africa FCT 2019".
+    """
+    def _norm(s: str) -> str:
+        return s.lower().replace("_", "").replace("-", "").replace(" ", "")
+
+    return _norm(passage.source_title).startswith(_norm(source_id))
+
+
 @dataclass
 class RetrievalResult:
     """Returned by RetrievalAgent.retrieve()."""
@@ -101,7 +117,7 @@ class RetrievalAgent:
         if allowed_sources:
             vec_results = [
                 p for p in vec_results
-                if any(p.passage_id.startswith(src) for src in allowed_sources)
+                if any(_source_matches(p, src) for src in allowed_sources)
             ]
         logger.info("RetrievalAgent: vector_after_filter=%d", len(vec_results))
 
@@ -111,7 +127,7 @@ class RetrievalAgent:
         if allowed_sources:
             bm25_results = [
                 p for p in bm25_results
-                if any(p.passage_id.startswith(src) for src in allowed_sources)
+                if any(_source_matches(p, src) for src in allowed_sources)
             ]
         logger.info("RetrievalAgent: bm25_after_filter=%d", len(bm25_results))
 
@@ -124,10 +140,10 @@ class RetrievalAgent:
         priority_source_boosted = None
         if priority_source:
             priority_passages = [
-                p for p in merged if p.passage_id.startswith(priority_source)
+                p for p in merged if _source_matches(p, priority_source)
             ]
             other_passages = [
-                p for p in merged if not p.passage_id.startswith(priority_source)
+                p for p in merged if not _source_matches(p, priority_source)
             ]
             merged = priority_passages + other_passages
             priority_source_boosted = priority_source
