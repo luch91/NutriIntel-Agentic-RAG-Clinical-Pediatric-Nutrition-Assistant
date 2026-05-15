@@ -306,6 +306,40 @@ WEST_AFRICA_FCT_TOC = {
 }
 
 # ==============================================================================
+# OCR FALLBACK
+# ==============================================================================
+
+def _extract_text_with_ocr_fallback(file_path: str, page_start: int, page_end: int) -> str:
+    """
+    Called when PyPDFLoader returns empty content for a chapter page range.
+    Uses PyMuPDF + pytesseract to OCR each page image.
+    Returns concatenated text or empty string if OCR also fails.
+    """
+    try:
+        import io
+        import fitz
+        import pytesseract
+        from PIL import Image
+
+        doc = fitz.open(file_path)
+        texts = []
+        for page_num in range(page_start - 1, min(page_end, doc.page_count)):
+            page = doc[page_num]
+            mat = fitz.Matrix(2.0, 2.0)   # 2x zoom for better OCR accuracy
+            clip = page.get_pixmap(matrix=mat)
+            img_bytes = clip.tobytes("png")
+            img = Image.open(io.BytesIO(img_bytes))
+            text = pytesseract.image_to_string(img, config="--psm 6")
+            if text.strip():
+                texts.append(text)
+        doc.close()
+        return "\n\n".join(texts)
+    except Exception as e:
+        logger.error(f"OCR fallback failed for {file_path} pages {page_start}-{page_end}: {e}")
+        return ""
+
+
+# ==============================================================================
 # CHAPTER EXTRACTION FUNCTIONS
 # ==============================================================================
 
@@ -381,7 +415,12 @@ def extract_chapters_from_pdf(file_path: str, doc_type: str) -> List[Document]:
 
         if not chapter_text.strip():
             logger.warning(f"Empty content for chapter {chapter_num}")
-            continue
+            logger.info(f"Attempting OCR fallback for chapter {chapter_num}")
+            chapter_text = _extract_text_with_ocr_fallback(file_path, page_start, page_end)
+            if not chapter_text.strip():
+                logger.warning(f"OCR also returned empty for chapter {chapter_num} — skipping")
+                continue
+            logger.info(f"OCR succeeded: {len(chapter_text)} chars extracted")
 
         # Determine chunk type (chapter vs section vs protocol)
         chunk_type = "chapter"
