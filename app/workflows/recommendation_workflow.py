@@ -99,8 +99,10 @@ class RecommendationWorkflow:
         )
 
 
-def _parse_age(age_str: str) -> float:
+def _parse_age(age_str) -> float:
     import re
+    if isinstance(age_str, (int, float)):
+        return float(age_str)
     s = age_str.strip().lower()
     if "month" in s:
         digits = "".join(c for c in s if c.isdigit() or c == ".")

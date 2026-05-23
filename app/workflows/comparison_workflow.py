@@ -51,7 +51,7 @@ def extract_comparison_entities(
     q = re.sub(r"^compare\s+", "", q, flags=re.IGNORECASE).strip()
 
     parts = re.split(
-        r"\s+vs\.?\s+|\s+versus\s+|\s+and\s+",
+        r"\s+vs\.?\s+|\s+versus\s+|\s+and\s+|\s+to\s+",
         q,
         maxsplit=1,
         flags=re.IGNORECASE,
