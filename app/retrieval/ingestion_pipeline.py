@@ -69,12 +69,14 @@ def _doc_to_enriched_passage(doc) -> EnrichedPassage:
     meta = doc.metadata
     source_id = meta.get("source", "unknown")
     chapter_num = str(meta.get("chapter_num", meta.get("section_num", "0")))
-    pid = _passage_id(source_id, chapter_num)
+    chunk_index = str(meta.get("chunk_index", ""))
+    chunk_key = f"{chapter_num}__c{chunk_index}" if chunk_index else chapter_num
+    pid = _passage_id(source_id, chunk_key)
 
     return EnrichedPassage(
         passage_id=pid,
         text=doc.page_content,
-        source_title=meta.get("book_title", meta.get("source", "Unknown Source")),
+        source_title=meta.get("source", "Unknown Source"),
         source_type=meta.get("document_type", "other"),
         condition_tags=meta.get("condition_tags", []),
         embedding=None,
