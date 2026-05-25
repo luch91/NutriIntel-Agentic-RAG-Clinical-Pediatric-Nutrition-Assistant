@@ -596,6 +596,14 @@ KENYA_FCT_CATEGORY_TAGS = {
     13: ["condiments", "spices", "salt", "pepper", "herbs"],
     14: ["insects", "termites", "grasshoppers", "caterpillars", "edible_insects"],
     15: ["mixed_dishes", "composite_foods", "stews", "porridges", "local_recipes"],
+    "supp_amino_acids": ["amino_acids", "protein_quality", "essential_amino_acids",
+                         "leucine", "lysine", "methionine", "phenylalanine", "threonine",
+                         "tryptophan", "valine", "isoleucine", "histidine",
+                         "iem", "pku", "msud", "protein_comparison"],
+    "supp_fatty_acids": ["fatty_acids", "saturated_fat", "unsaturated_fat",
+                         "omega_3", "omega_6", "linoleic_acid", "alpha_linolenic_acid",
+                         "arachidonic_acid", "dha", "epa",
+                         "lipid_comparison", "fat_quality"],
 }
 
 KENYA_FCT_NUTRIENT_FOCUS = {
@@ -614,6 +622,8 @@ KENYA_FCT_NUTRIENT_FOCUS = {
     13: ["micronutrients", "antioxidants", "iodine"],
     14: ["protein", "iron", "zinc", "b_vitamins", "calcium"],
     15: ["energy", "protein", "micronutrients"],
+    "supp_amino_acids": ["amino_acids", "protein_quality", "iem_requirements"],
+    "supp_fatty_acids": ["fatty_acids", "essential_fatty_acids", "lipid_profile"],
 }
 
 # ============================================================================

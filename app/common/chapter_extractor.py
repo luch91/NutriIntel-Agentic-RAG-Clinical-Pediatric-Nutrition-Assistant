@@ -325,6 +325,9 @@ KENYA_FCT_TOC = {
     13: {"title": "Condiments and spices",                         "pages": (138, 149)},
     14: {"title": "Insects",                                       "pages": (150, 152)},
     15: {"title": "Mixed dishes and composite foods",              "pages": (153, 168)},
+    # Supplementary tables — amino acid and fatty acid profiles not in main chapters
+    "supp_amino_acids": {"title": "Supplementary Table: Amino Acid Composition",   "pages": (181, 185)},
+    "supp_fatty_acids": {"title": "Supplementary Table: Fatty Acid Composition",   "pages": (187, 201)},
 }
 
 # ==============================================================================
