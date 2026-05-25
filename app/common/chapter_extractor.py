@@ -306,6 +306,113 @@ WEST_AFRICA_FCT_TOC = {
 }
 
 # ==============================================================================
+# Kenya Food Composition Tables (2018)
+# ==============================================================================
+
+KENYA_FCT_TOC = {
+    1:  {"title": "Cereals and cereal products",                   "pages": (30, 44)},
+    2:  {"title": "Starchy roots, tubers and bananas",             "pages": (44, 50)},
+    3:  {"title": "Legumes and pulses",                            "pages": (51, 65)},
+    4:  {"title": "Vegetables",                                    "pages": (65, 83)},
+    5:  {"title": "Fruits",                                        "pages": (83, 95)},
+    6:  {"title": "Milk and dairy products",                       "pages": (95, 104)},
+    7:  {"title": "Meat, poultry and eggs",                        "pages": (104, 116)},
+    8:  {"title": "Fish and seafood",                              "pages": (117, 125)},
+    9:  {"title": "Oils and fats",                                 "pages": (115, 128)},
+    10: {"title": "Nuts and seeds",                                "pages": (129, 134)},
+    11: {"title": "Sugars and sweetened products",                 "pages": (134, 135)},
+    12: {"title": "Beverages",                                     "pages": (135, 137)},
+    13: {"title": "Condiments and spices",                         "pages": (138, 149)},
+    14: {"title": "Insects",                                       "pages": (150, 152)},
+    15: {"title": "Mixed dishes and composite foods",              "pages": (153, 168)},
+}
+
+# ==============================================================================
+# Tanzania Food Composition Tables (2008)
+# ==============================================================================
+
+TANZANIA_FCT_TOC = {
+    "A1": {"title": "Cereals and cereal products",                 "pages": (31, 52)},
+    "B1": {"title": "Roots, tubers and bananas",                   "pages": (53, 58)},
+    "B2": {"title": "Roots and banana-based local dishes",         "pages": (59, 70)},
+    "C1": {"title": "Pulses, seeds and nuts",                      "pages": (71, 83)},
+    "C2": {"title": "Pulses-based local dishes",                   "pages": (84, 88)},
+    "D1": {"title": "Meat, poultry and fish",                      "pages": (89, 94)},
+    "D2": {"title": "Meat-based local dishes",                     "pages": (95, 100)},
+    "D3": {"title": "Milk and dairy products",                     "pages": (101, 106)},
+    "E":  {"title": "Oils and fats",                               "pages": (107, 112)},
+    "F1": {"title": "Fruits",                                      "pages": (113, 124)},
+    "F2": {"title": "Fruit-based local dishes",                    "pages": (125, 130)},
+    "F3": {"title": "Vegetables",                                  "pages": (131, 142)},
+    "F4": {"title": "Vegetable-based local dishes",                "pages": (143, 154)},
+    "G1": {"title": "Miscellaneous foods",                         "pages": (155, 166)},
+    "G2": {"title": "Miscellaneous local dishes",                  "pages": (167, 172)},
+    "H":  {"title": "Local broths and soups",                      "pages": (173, 228)},
+}
+
+# ==============================================================================
+# Malawi Food Composition Table (2019)
+# ==============================================================================
+
+MALAWI_FCT_TOC = {
+    1: {"title": "Staples",                                        "pages": (20, 34)},
+    2: {"title": "Legumes",                                        "pages": (35, 39)},
+    3: {"title": "Animal foods",                                   "pages": (40, 51)},
+    4: {"title": "Vegetables",                                     "pages": (52, 58)},
+    5: {"title": "Fruits",                                         "pages": (59, 63)},
+    6: {"title": "Fats and oils",                                  "pages": (64, 65)},
+    7: {"title": "Baby foods",                                     "pages": (66, 76)},
+    8: {"title": "Miscellaneous",                                  "pages": (77, 78)},
+}
+
+# ==============================================================================
+# Mozambique Food Composition Table (2009)
+# ==============================================================================
+
+MOZAMBIQUE_FCT_TOC = {
+    1:  {"title": "Beverages",                                     "pages": (15, 16)},
+    2:  {"title": "Cereals and cereal products",                   "pages": (17, 18)},
+    3:  {"title": "Starchy roots and tubers",                      "pages": (19, 20)},
+    4:  {"title": "Vegetables",                                    "pages": (21, 22)},
+    5:  {"title": "Legumes, nuts and seeds",                       "pages": (23, 24)},
+    6:  {"title": "Mushrooms",                                     "pages": (25, 26)},
+    7:  {"title": "Fruit",                                         "pages": (27, 28)},
+    8:  {"title": "Fish and seafood",                              "pages": (29, 30)},
+    9:  {"title": "Meat and eggs",                                 "pages": (31, 32)},
+    10: {"title": "Milk and dairy products",                       "pages": (33, 34)},
+    11: {"title": "Fats and oils",                                 "pages": (35, 36)},
+    12: {"title": "Sugars and other foods",                        "pages": (37, 38)},
+}
+
+# ==============================================================================
+# Congo Basin Food Composition Table (2012)
+# ==============================================================================
+
+CONGO_BASIN_FCT_TOC = {
+    1:  {"title": "Cereals and cereal products",                   "pages": (9, 11)},
+    2:  {"title": "Roots and tubers",                              "pages": (11, 12)},
+    3:  {"title": "Dark green leafy vegetables",                   "pages": (12, 13)},
+    4:  {"title": "Vegetables",                                    "pages": (13, 14)},
+    5:  {"title": "Vitamin A-rich foods",                          "pages": (14, 15)},
+    6:  {"title": "Fruits",                                        "pages": (15, 16)},
+    7:  {"title": "Meat, poultry and eggs",                        "pages": (16, 17)},
+    8:  {"title": "Legumes, nuts and seeds",                       "pages": (17, 18)},
+    9:  {"title": "Oils and fats",                                 "pages": (18, 19)},
+    10: {"title": "Sweets and beverages",                          "pages": (19, 20)},
+    11: {"title": "Spices and herbs",                              "pages": (20, 21)},
+    12: {"title": "Fish and seafood",                              "pages": (21, 22)},
+}
+
+# ==============================================================================
+# Uganda Food Composition Tables (2012)
+# ==============================================================================
+# Single flat table covering all food groups — treated as one chapter.
+
+UGANDA_FCT_TOC = {
+    1: {"title": "Uganda food composition data (all food groups)",  "pages": (1, 31)},
+}
+
+# ==============================================================================
 # OCR FALLBACK
 # ==============================================================================
 
@@ -365,6 +472,12 @@ def extract_chapters_from_pdf(file_path: str, doc_type: str) -> List[Document]:
         "drug_nutrient": ("DrugNutrient2024", "Handbook of Drug-Nutrient Interactions, 3rd ed.", DRUG_NUTRIENT_TOC),
         "biochemistry": ("IntegrativeBiochem2022", "Integrative Human Biochemistry", BIOCHEM_TOC),
         "west_africa_fct_2019": ("WestAfricaFCT2019", "Food Composition Table for West Africa (Ghana, Senegal, Mali, Burkina Faso, Nigeria, Cote d'Ivoire) 2019", WEST_AFRICA_FCT_TOC),
+        "kenya_fct_2018":       ("KenyaFCT2018",      "Kenya Food Composition Tables (2018)", KENYA_FCT_TOC),
+        "tanzania_fct_2008":    ("TanzaniaFCT2008",   "Tanzania Food Composition Tables (2008)", TANZANIA_FCT_TOC),
+        "malawi_fct_2019":      ("MalawiFCT2019",     "Malawi Food Composition Table (2019)", MALAWI_FCT_TOC),
+        "mozambique_fct_2009":  ("MozambiqueFCT2009", "Mozambique Food Composition Table (2009)", MOZAMBIQUE_FCT_TOC),
+        "congo_basin_fct_2012": ("CongoBasinFCT2012", "Congo Basin Food Composition Table (2012)", CONGO_BASIN_FCT_TOC),
+        "uganda_fct_2012":      ("UgandaFCT2012",     "Uganda Food Composition Tables (2012)", UGANDA_FCT_TOC),
     }
 
     if doc_type not in toc_map:

@@ -573,6 +573,200 @@ WEST_AFRICA_FCT_AGE_RELEVANCE = {
     **{i: ["all_ages", "pediatric", "weaning", "toddler", "child", "adolescent"] for i in range(1, 14)}
 }
 
+# ============================================================================
+# Kenya FCT (2018) — Category Tags
+# ============================================================================
+
+_FCT_AGE_ALL = ["all_ages", "pediatric", "weaning", "toddler", "child", "adolescent"]
+_FCT_THERAPY = ["meal_planning", "food_sources", "fct_reference"]
+
+KENYA_FCT_CATEGORY_TAGS = {
+    1:  ["cereals", "grains", "maize", "rice", "millet", "sorghum", "wheat", "ugali"],
+    2:  ["starchy_roots", "tubers", "bananas", "cassava", "yam", "sweet_potato", "plantain"],
+    3:  ["legumes", "beans", "cowpea", "lentils", "groundnut", "soybean", "pulses"],
+    4:  ["vegetables", "leafy_vegetables", "tomato", "onion", "kale", "spinach", "sukuma_wiki"],
+    5:  ["fruits", "mango", "banana", "orange", "pawpaw", "passion_fruit", "avocado"],
+    6:  ["milk", "dairy", "yogurt", "cheese", "fermented_milk"],
+    7:  ["meat", "poultry", "eggs", "beef", "chicken", "goat", "offal"],
+    8:  ["fish", "tilapia", "sardine", "omena", "dried_fish", "freshwater_fish"],
+    9:  ["fats", "oils", "vegetable_oil", "butter", "ghee"],
+    10: ["nuts", "seeds", "groundnut", "sesame", "sunflower_seeds"],
+    11: ["sugars", "honey", "jam", "sweetened_products"],
+    12: ["beverages", "tea", "coffee", "juices", "local_drinks"],
+    13: ["condiments", "spices", "salt", "pepper", "herbs"],
+    14: ["insects", "termites", "grasshoppers", "caterpillars", "edible_insects"],
+    15: ["mixed_dishes", "composite_foods", "stews", "porridges", "local_recipes"],
+}
+
+KENYA_FCT_NUTRIENT_FOCUS = {
+    1:  ["energy", "carbohydrate", "fiber", "iron", "zinc", "b_vitamins"],
+    2:  ["energy", "carbohydrate", "vitamin_c", "potassium"],
+    3:  ["protein", "iron", "zinc", "folate", "calcium", "fiber"],
+    4:  ["vitamin_a", "vitamin_c", "folate", "iron", "calcium"],
+    5:  ["vitamin_c", "vitamin_a", "potassium", "fiber"],
+    6:  ["calcium", "protein", "vitamin_a", "vitamin_d", "vitamin_b12", "riboflavin"],
+    7:  ["protein", "iron", "zinc", "vitamin_b12", "niacin"],
+    8:  ["protein", "omega_3", "iodine", "selenium", "calcium"],
+    9:  ["energy", "vitamin_e", "essential_fatty_acids"],
+    10: ["protein", "healthy_fats", "vitamin_e", "zinc", "magnesium"],
+    11: ["energy", "carbohydrate"],
+    12: ["hydration", "vitamin_c", "energy"],
+    13: ["micronutrients", "antioxidants", "iodine"],
+    14: ["protein", "iron", "zinc", "b_vitamins", "calcium"],
+    15: ["energy", "protein", "micronutrients"],
+}
+
+# ============================================================================
+# Tanzania FCT (2008) — Category Tags
+# ============================================================================
+
+TANZANIA_FCT_CATEGORY_TAGS = {
+    "A1": ["cereals", "grains", "maize", "rice", "sorghum", "millet", "wheat", "ugali", "porridge"],
+    "B1": ["starchy_roots", "tubers", "bananas", "cassava", "sweet_potato", "yam", "plantain"],
+    "B2": ["starchy_roots", "tubers", "bananas", "local_dishes", "ugali", "recipes"],
+    "C1": ["legumes", "pulses", "seeds", "nuts", "beans", "cowpea", "groundnut", "sesame"],
+    "C2": ["legumes", "pulses", "local_dishes", "bean_stew", "recipes"],
+    "D1": ["meat", "poultry", "fish", "beef", "chicken", "goat", "tilapia", "dagaa"],
+    "D2": ["meat", "poultry", "fish", "local_dishes", "stew", "recipes"],
+    "D3": ["milk", "dairy", "fermented_milk", "yogurt"],
+    "E":  ["fats", "oils", "vegetable_oil", "coconut_oil", "ghee", "butter"],
+    "F1": ["fruits", "mango", "banana", "orange", "pawpaw", "pineapple", "passion_fruit"],
+    "F2": ["fruits", "local_dishes", "fruit_juice", "recipes"],
+    "F3": ["vegetables", "leafy_vegetables", "tomato", "onion", "spinach", "amaranth", "okra"],
+    "F4": ["vegetables", "local_dishes", "vegetable_stew", "recipes"],
+    "G1": ["miscellaneous", "spices", "condiments", "sugar", "salt", "tea"],
+    "G2": ["miscellaneous", "local_dishes", "snacks", "recipes"],
+    "H":  ["soups", "broths", "local_dishes", "stew", "recipes"],
+}
+
+TANZANIA_FCT_NUTRIENT_FOCUS = {
+    "A1": ["energy", "carbohydrate", "fiber", "iron", "zinc", "b_vitamins"],
+    "B1": ["energy", "carbohydrate", "vitamin_c", "potassium"],
+    "B2": ["energy", "carbohydrate", "protein"],
+    "C1": ["protein", "iron", "zinc", "folate", "calcium", "fiber"],
+    "C2": ["protein", "iron", "zinc", "folate"],
+    "D1": ["protein", "iron", "zinc", "vitamin_b12", "omega_3"],
+    "D2": ["protein", "iron", "zinc"],
+    "D3": ["calcium", "protein", "vitamin_a", "vitamin_b12", "riboflavin"],
+    "E":  ["energy", "vitamin_e", "essential_fatty_acids"],
+    "F1": ["vitamin_c", "vitamin_a", "potassium", "fiber"],
+    "F2": ["vitamin_c", "vitamin_a", "potassium"],
+    "F3": ["vitamin_a", "vitamin_c", "folate", "iron", "calcium"],
+    "F4": ["vitamin_a", "vitamin_c", "folate", "iron"],
+    "G1": ["micronutrients", "iodine"],
+    "G2": ["energy", "micronutrients"],
+    "H":  ["energy", "protein", "micronutrients"],
+}
+
+# ============================================================================
+# Malawi FCT (2019) — Category Tags
+# ============================================================================
+
+MALAWI_FCT_CATEGORY_TAGS = {
+    1: ["cereals", "staples", "maize", "sorghum", "millet", "cassava", "nsima", "wheat", "bread"],
+    2: ["legumes", "beans", "cowpea", "groundnut", "soybean", "lentils", "pulses"],
+    3: ["meat", "poultry", "fish", "eggs", "dairy", "beef", "chicken", "chambo", "usipa"],
+    4: ["vegetables", "leafy_vegetables", "tomato", "onion", "nkhwani", "okra", "rape"],
+    5: ["fruits", "mango", "banana", "orange", "pawpaw", "guava"],
+    6: ["fats", "oils", "vegetable_oil", "groundnut_oil", "margarine"],
+    7: ["baby_foods", "infant_formula", "weaning_foods", "complementary_foods", "porridge"],
+    8: ["miscellaneous", "spices", "condiments", "sugar", "salt", "beverages"],
+}
+
+MALAWI_FCT_NUTRIENT_FOCUS = {
+    1: ["energy", "carbohydrate", "fiber", "iron", "zinc", "b_vitamins"],
+    2: ["protein", "iron", "zinc", "folate", "calcium", "fiber"],
+    3: ["protein", "iron", "zinc", "vitamin_b12", "omega_3", "calcium"],
+    4: ["vitamin_a", "vitamin_c", "folate", "iron", "calcium"],
+    5: ["vitamin_c", "vitamin_a", "potassium", "fiber"],
+    6: ["energy", "vitamin_e", "essential_fatty_acids"],
+    7: ["energy", "protein", "calcium", "iron", "zinc", "vitamin_a", "vitamin_d"],
+    8: ["micronutrients", "iodine"],
+}
+
+# ============================================================================
+# Mozambique FCT (2009) — Category Tags
+# ============================================================================
+
+MOZAMBIQUE_FCT_CATEGORY_TAGS = {
+    1:  ["beverages", "juices", "soft_drinks", "local_drinks", "tea", "coffee"],
+    2:  ["cereals", "grains", "maize", "rice", "sorghum", "wheat", "xima"],
+    3:  ["starchy_roots", "tubers", "cassava", "sweet_potato", "yam"],
+    4:  ["vegetables", "leafy_vegetables", "tomato", "onion", "okra", "spinach"],
+    5:  ["legumes", "nuts", "seeds", "beans", "groundnut", "cowpea", "cashew"],
+    6:  ["mushrooms", "wild_mushrooms", "edible_fungi"],
+    7:  ["fruits", "mango", "banana", "orange", "pawpaw", "coconut", "guava"],
+    8:  ["fish", "seafood", "tilapia", "shrimp", "dried_fish", "carapau"],
+    9:  ["meat", "eggs", "beef", "goat", "chicken", "pork", "offal"],
+    10: ["milk", "dairy", "yogurt", "cheese", "fermented_milk"],
+    11: ["fats", "oils", "coconut_oil", "palm_oil", "vegetable_oil"],
+    12: ["sugars", "miscellaneous", "honey", "salt", "condiments"],
+}
+
+MOZAMBIQUE_FCT_NUTRIENT_FOCUS = {
+    1:  ["hydration", "vitamin_c", "energy"],
+    2:  ["energy", "carbohydrate", "fiber", "iron", "zinc", "b_vitamins"],
+    3:  ["energy", "carbohydrate", "vitamin_c", "potassium"],
+    4:  ["vitamin_a", "vitamin_c", "folate", "iron", "calcium"],
+    5:  ["protein", "iron", "zinc", "folate", "calcium", "healthy_fats"],
+    6:  ["micronutrients", "fiber"],
+    7:  ["vitamin_c", "vitamin_a", "potassium", "fiber"],
+    8:  ["protein", "omega_3", "iodine", "selenium", "calcium"],
+    9:  ["protein", "iron", "zinc", "vitamin_b12"],
+    10: ["calcium", "protein", "vitamin_a", "vitamin_d", "vitamin_b12"],
+    11: ["energy", "vitamin_e", "essential_fatty_acids"],
+    12: ["energy", "iodine"],
+}
+
+# ============================================================================
+# Congo Basin FCT (2012) — Category Tags
+# ============================================================================
+
+CONGO_BASIN_FCT_CATEGORY_TAGS = {
+    1:  ["cereals", "grains", "maize", "cassava", "plantain", "rice", "sorghum"],
+    2:  ["starchy_roots", "tubers", "cassava", "yam", "sweet_potato", "cocoyam"],
+    3:  ["dark_green_leafy_vegetables", "leafy_vegetables", "greens", "vitamin_a", "folate"],
+    4:  ["vegetables", "tomato", "onion", "eggplant", "okra", "pepper"],
+    5:  ["vitamin_a_rich_foods", "orange_vegetables", "orange_fruits", "palm_oil", "eggs"],
+    6:  ["fruits", "mango", "banana", "orange", "pawpaw", "citrus", "tropical_fruits"],
+    7:  ["meat", "poultry", "eggs", "bushmeat", "beef", "chicken", "goat", "offal"],
+    8:  ["legumes", "nuts", "seeds", "beans", "cowpea", "groundnut", "palm_nuts", "sesame"],
+    9:  ["fats", "oils", "palm_oil", "groundnut_oil", "coconut_oil"],
+    10: ["sweets", "beverages", "sugar", "honey", "local_drinks", "juice"],
+    11: ["spices", "herbs", "condiments", "salt", "pepper", "seasoning"],
+    12: ["fish", "seafood", "tilapia", "catfish", "dried_fish", "smoked_fish"],
+}
+
+CONGO_BASIN_FCT_NUTRIENT_FOCUS = {
+    1:  ["energy", "carbohydrate", "fiber", "iron", "zinc", "b_vitamins"],
+    2:  ["energy", "carbohydrate", "vitamin_c", "potassium"],
+    3:  ["vitamin_a", "folate", "iron", "calcium", "vitamin_c"],
+    4:  ["vitamin_c", "folate", "iron", "fiber"],
+    5:  ["vitamin_a", "beta_carotene", "energy", "protein"],
+    6:  ["vitamin_c", "vitamin_a", "potassium", "fiber"],
+    7:  ["protein", "iron", "zinc", "vitamin_b12", "niacin"],
+    8:  ["protein", "iron", "zinc", "folate", "calcium", "healthy_fats"],
+    9:  ["energy", "vitamin_e", "essential_fatty_acids", "vitamin_k"],
+    10: ["energy", "carbohydrate"],
+    11: ["micronutrients", "iodine"],
+    12: ["protein", "omega_3", "iodine", "selenium", "calcium"],
+}
+
+# ============================================================================
+# Uganda FCT (2012) — Category Tags
+# ============================================================================
+
+UGANDA_FCT_CATEGORY_TAGS = {
+    1: ["cereals", "starchy_roots", "legumes", "vegetables", "fruits", "meat", "fish",
+        "milk", "dairy", "eggs", "fats", "oils", "nuts", "seeds", "beverages",
+        "miscellaneous", "local_dishes", "maize", "cassava", "beans", "matoke"],
+}
+
+UGANDA_FCT_NUTRIENT_FOCUS = {
+    1: ["energy", "protein", "carbohydrate", "fat", "fiber", "calcium", "iron", "zinc",
+        "vitamin_a", "vitamin_c", "folate", "vitamin_b12", "omega_3"],
+}
+
 
 # ============================================================================
 # MAIN ENRICHMENT FUNCTION
@@ -667,12 +861,48 @@ def enrich_chapter_metadata(doc: Document, doc_type: str) -> Document:
     elif doc_type == "west_africa_fct_2019":
         condition_tags = WEST_AFRICA_FCT_CATEGORY_TAGS.get(chapter_num, [])
         age_relevance = WEST_AFRICA_FCT_AGE_RELEVANCE.get(chapter_num, [])
-        # FCT is a food composition reference, not a therapy area itself,
-        # but its categories support all therapy areas through meal planning
         nutrient_focus = WEST_AFRICA_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
-        therapy_area = ["meal_planning", "food_sources", "fct_reference"]
-        # Link nutrient focus to condition tags for cross-referencing
-        condition_tags.extend(nutrient_focus)
+        therapy_area = _FCT_THERAPY[:]
+        condition_tags = list(condition_tags) + nutrient_focus
+
+    elif doc_type == "kenya_fct_2018":
+        condition_tags = list(KENYA_FCT_CATEGORY_TAGS.get(chapter_num, []))
+        condition_tags += KENYA_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
+        age_relevance = _FCT_AGE_ALL[:]
+        therapy_area = _FCT_THERAPY[:]
+
+    elif doc_type == "tanzania_fct_2008":
+        condition_tags = list(TANZANIA_FCT_CATEGORY_TAGS.get(chapter_num, []))
+        condition_tags += TANZANIA_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
+        age_relevance = _FCT_AGE_ALL[:]
+        therapy_area = _FCT_THERAPY[:]
+
+    elif doc_type == "malawi_fct_2019":
+        condition_tags = list(MALAWI_FCT_CATEGORY_TAGS.get(chapter_num, []))
+        condition_tags += MALAWI_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
+        age_relevance = _FCT_AGE_ALL[:]
+        therapy_area = _FCT_THERAPY[:]
+        # Baby foods group is especially relevant to weaning/preterm
+        if chapter_num == 7:
+            therapy_area = list(_FCT_THERAPY) + ["preterm"]
+
+    elif doc_type == "mozambique_fct_2009":
+        condition_tags = list(MOZAMBIQUE_FCT_CATEGORY_TAGS.get(chapter_num, []))
+        condition_tags += MOZAMBIQUE_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
+        age_relevance = _FCT_AGE_ALL[:]
+        therapy_area = _FCT_THERAPY[:]
+
+    elif doc_type == "congo_basin_fct_2012":
+        condition_tags = list(CONGO_BASIN_FCT_CATEGORY_TAGS.get(chapter_num, []))
+        condition_tags += CONGO_BASIN_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
+        age_relevance = _FCT_AGE_ALL[:]
+        therapy_area = _FCT_THERAPY[:]
+
+    elif doc_type == "uganda_fct_2012":
+        condition_tags = list(UGANDA_FCT_CATEGORY_TAGS.get(chapter_num, []))
+        condition_tags += UGANDA_FCT_NUTRIENT_FOCUS.get(chapter_num, [])
+        age_relevance = _FCT_AGE_ALL[:]
+        therapy_area = _FCT_THERAPY[:]
 
     # Add enriched metadata
     doc.metadata["condition_tags"] = condition_tags

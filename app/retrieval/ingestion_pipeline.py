@@ -48,6 +48,17 @@ _FILENAME_DOC_TYPE_MAP = {
     "integrative human biochemistry": "biochemistry",
     "west africa": "west_africa_fct_2019",
     "food composition table for west africa": "west_africa_fct_2019",
+    "kenya food composition": "kenya_fct_2018",
+    "kenya fct": "kenya_fct_2018",
+    "tanzania food composition": "tanzania_fct_2008",
+    "tanzania fct": "tanzania_fct_2008",
+    "malawi food composition": "malawi_fct_2019",
+    "malawi fct": "malawi_fct_2019",
+    "mozambique food composition": "mozambique_fct_2009",
+    "mozambique fct": "mozambique_fct_2009",
+    "congo basin": "congo_basin_fct_2012",
+    "uganda food composition": "uganda_fct_2012",
+    "uganda fct": "uganda_fct_2012",
 }
 
 
