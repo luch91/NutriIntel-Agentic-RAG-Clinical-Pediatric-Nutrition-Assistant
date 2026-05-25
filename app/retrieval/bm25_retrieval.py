@@ -50,6 +50,22 @@ class BM25Retriever:
         self._index = BM25Okapi(tokenised)
         logger.info("BM25Retriever: corpus now contains %d passages", len(self._passages))
 
+    def save(self, path: str) -> None:
+        """Serialize passages + index to a pickle file for cloud deployment."""
+        import pickle
+        with open(path, "wb") as f:
+            pickle.dump({"passages": self._passages, "index": self._index}, f)
+        logger.info("BM25Retriever: saved %d passages to %s", len(self._passages), path)
+
+    def load(self, path: str) -> None:
+        """Load a previously saved corpus from a pickle file."""
+        import pickle
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+        self._passages = data["passages"]
+        self._index = data["index"]
+        logger.info("BM25Retriever: loaded %d passages from %s", len(self._passages), path)
+
     def search(self, query: str, top_k: int = 20) -> List[RetrievedPassage]:
         """Return up to top_k passages ranked by BM25 score."""
         if self._index is None or not self._passages:

@@ -1,5 +1,8 @@
 """
-VectorRetriever — Qdrant in-memory backend with sentence-transformer embeddings.
+VectorRetriever — Qdrant backend with sentence-transformer embeddings.
+
+Connects to Qdrant Cloud when QDRANT_URL + QDRANT_API_KEY env vars are set,
+falls back to in-memory Qdrant for local development.
 
 index(passages)  : embed (if not already embedded) and upsert into Qdrant collection.
 search(embedding): return top-k RetrievedPassage by cosine similarity.
@@ -8,6 +11,7 @@ search(embedding): return top-k RetrievedPassage by cosine similarity.
 from __future__ import annotations
 
 import logging
+import os
 from typing import List, Optional
 
 from app.retrieval import EnrichedPassage, RetrievedPassage
@@ -24,10 +28,10 @@ _VECTOR_DIM = 384
 
 class VectorRetriever:
     """
-    Wraps Qdrant (in-memory) for passage indexing and similarity search.
+    Wraps Qdrant for passage indexing and similarity search.
 
-    The same SentenceTransformer used by the intent classifier ensures embedding
-    consistency across the pipeline.
+    When QDRANT_URL and QDRANT_API_KEY env vars are set, connects to Qdrant Cloud.
+    Otherwise uses an in-memory instance (local dev / testing).
     """
 
     def __init__(
@@ -36,9 +40,20 @@ class VectorRetriever:
         model: Optional[object] = None,
     ) -> None:
         from qdrant_client import QdrantClient
-        from qdrant_client.http.models import Distance, VectorParams
         from sentence_transformers import SentenceTransformer
-        self._client = qdrant_client or QdrantClient(":memory:")
+
+        if qdrant_client is not None:
+            self._client = qdrant_client
+        else:
+            qdrant_url = os.environ.get("QDRANT_URL")
+            qdrant_api_key = os.environ.get("QDRANT_API_KEY")
+            if qdrant_url:
+                self._client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+                logger.info("VectorRetriever: connected to Qdrant Cloud at %s", qdrant_url)
+            else:
+                self._client = QdrantClient(":memory:")
+                logger.info("VectorRetriever: using in-memory Qdrant (no QDRANT_URL set)")
+
         self._model = model or SentenceTransformer(_MODEL_NAME)
         self._ensure_collection()
 
