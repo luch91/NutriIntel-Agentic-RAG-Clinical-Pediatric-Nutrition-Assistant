@@ -15,9 +15,13 @@ import io
 import sys
 import os
 
-# Uncomment and set if tesseract.exe is not on PATH:
-# import pytesseract
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Auto-configure tesseract path on Windows if not on PATH
+import sys as _sys
+if _sys.platform == "win32":
+    import pytesseract as _pt
+    import shutil
+    if not shutil.which("tesseract"):
+        _pt.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 PDF_PATH = os.path.join(
     os.path.dirname(__file__), "..", "app", "common", "data", "LESOTHO Food Composition Table.pdf"
@@ -91,9 +95,9 @@ def main():
     print(SEPARATOR)
     print("VERDICT GUIDE")
     print(SEPARATOR)
-    print("Good  (>80 words/page, readable food names + numbers) → safe to ingest")
-    print("OK    (40-80 words/page, some garbling)               → ingest with caution")
-    print("Poor  (<40 words/page, mostly garbage)                → skip Lesotho")
+    print("Good  (>80 words/page, readable food names + numbers) -> safe to ingest")
+    print("OK    (40-80 words/page, some garbling)               -> ingest with caution")
+    print("Poor  (<40 words/page, mostly garbage)                -> skip Lesotho")
 
 
 if __name__ == "__main__":
