@@ -73,7 +73,7 @@ from app.retrieval.ingestion_pipeline import IngestionPipeline
 from app.retrieval.vector_retrieval import VectorRetriever
 
 logger.info("Connecting to Qdrant Cloud...")
-cloud_client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+cloud_client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=120)
 
 # Pass the cloud client directly so VectorRetriever doesn't create in-memory
 vector_retriever = VectorRetriever(qdrant_client=cloud_client)

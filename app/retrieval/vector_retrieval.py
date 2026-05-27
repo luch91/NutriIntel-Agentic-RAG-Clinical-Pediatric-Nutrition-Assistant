@@ -48,7 +48,11 @@ class VectorRetriever:
             qdrant_url = os.environ.get("QDRANT_URL")
             qdrant_api_key = os.environ.get("QDRANT_API_KEY")
             if qdrant_url:
-                self._client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+                self._client = QdrantClient(
+                    url=qdrant_url,
+                    api_key=qdrant_api_key,
+                    timeout=120,  # seconds — long enough for large batch upserts
+                )
                 logger.info("VectorRetriever: connected to Qdrant Cloud at %s", qdrant_url)
             else:
                 self._client = QdrantClient(":memory:")
@@ -101,8 +105,31 @@ class VectorRetriever:
             )
             for p in passages
         ]
-        self._client.upsert(collection_name=_COLLECTION, points=points)
-        logger.info("VectorRetriever: indexed %d passages", len(points))
+        _UPSERT_BATCH = 100
+        _MAX_RETRIES = 3
+        for i in range(0, len(points), _UPSERT_BATCH):
+            batch = points[i : i + _UPSERT_BATCH]
+            for attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    self._client.upsert(collection_name=_COLLECTION, points=batch)
+                    break
+                except Exception as exc:
+                    if attempt == _MAX_RETRIES:
+                        raise
+                    logger.warning(
+                        "VectorRetriever: upsert batch %d failed (attempt %d/%d): %s — retrying",
+                        i // _UPSERT_BATCH,
+                        attempt,
+                        _MAX_RETRIES,
+                        exc,
+                    )
+                    import time; time.sleep(5 * attempt)
+            logger.info(
+                "VectorRetriever: upserted %d/%d passages",
+                min(i + _UPSERT_BATCH, len(points)),
+                len(points),
+            )
+        logger.info("VectorRetriever: indexed %d passages total", len(points))
 
     def search(
         self,
