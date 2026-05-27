@@ -1,0 +1,20 @@
+{
+  "labels": [
+    "therapy",
+    "recommendation",
+    "comparison",
+    "general"
+  ],
+  "id_to_label": {
+    "0": "therapy",
+    "1": "recommendation",
+    "2": "comparison",
+    "3": "general"
+  },
+  "label_to_id": {
+    "therapy": 0,
+    "recommendation": 1,
+    "comparison": 2,
+    "general": 3
+  }
+}

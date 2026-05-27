@@ -55,7 +55,7 @@ def _build_and_ingest():
     if os.environ.get("QDRANT_URL"):
         # Cloud mode — vector index already populated by build_cloud_index.py.
         # Load the pre-serialized BM25 corpus if it exists next to this file.
-        bm25_path = _DATA_DIR.parent.parent / "bm25_corpus.pkl"
+        bm25_path = _DATA_DIR.parent.parent.parent / "bm25_corpus.pkl"
         if bm25_path.exists():
             bm25_retriever.load(str(bm25_path))
             logger.info("startup_ingestion: loaded BM25 corpus from %s", bm25_path)

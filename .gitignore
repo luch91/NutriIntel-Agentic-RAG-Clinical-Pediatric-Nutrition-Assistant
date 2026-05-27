@@ -46,10 +46,10 @@ frontend/node_modules/
 frontend/.env.local
 frontend/.env*.local
 
-# Model artifacts (large binary files)
-app/models/intent_classifier/embedding_model/
-app/models/intent_classifier/*.pkl
-app/models/intent_classifier/*.json
+# Model artifacts:
+# - *.safetensors handled by Git LFS (see .gitattributes)
+# - classifier.pkl, label_encoder.pkl, label_mapping.json are INCLUDED (small, needed on Vercel)
+# - embedding_model non-weights files are INCLUDED (tokenizer, config, etc.)
 
 # Knowledge base source documents (large PDFs/EPUBs — store separately)
 app/common/data/*.pdf

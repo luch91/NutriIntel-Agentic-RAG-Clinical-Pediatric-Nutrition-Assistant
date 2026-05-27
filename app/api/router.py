@@ -34,7 +34,7 @@ from app.api.schemas import (
     ResetResponse,
     StateSnapshot,
 )
-from app.classification.intent_classifier import ClassificationResult, MockIntentClassifier
+from app.classification.intent_classifier import ClassificationResult, IntentClassifier, MockIntentClassifier
 from app.classification.intent_labels import CONFIDENCE_THRESHOLD, IntentLabel
 from app.contracts.display_adapter import DisplayAdapter, DisplayAdapterError
 from app.contracts.response_contracts import EvidenceSummary, GeneralResponse
@@ -91,7 +91,15 @@ app.state.display_adapter = DisplayAdapter()
 
 def _get_classifier():
     if app.state.intent_classifier is None:
-        app.state.intent_classifier = MockIntentClassifier()
+        try:
+            app.state.intent_classifier = IntentClassifier()
+            logger.info("_get_classifier: real IntentClassifier loaded successfully")
+        except Exception as exc:
+            logger.warning(
+                "_get_classifier: failed to load IntentClassifier (%s) — falling back to MockIntentClassifier",
+                exc,
+            )
+            app.state.intent_classifier = MockIntentClassifier()
     return app.state.intent_classifier
 
 
@@ -103,7 +111,20 @@ def _get_state_manager() -> StateManager:
 
 def _get_router() -> WorkflowRouter:
     if app.state.workflow_router is None:
+        # Lazy-initialise retrieval agent if lifespan didn't fire (e.g. Vercel serverless).
         retrieval_agent = getattr(app.state, "retrieval_agent", None)
+        if retrieval_agent is None:
+            try:
+                from app.retrieval.startup_ingestion import get_retrieval_agent
+                retrieval_agent = get_retrieval_agent()
+                app.state.retrieval_agent = retrieval_agent
+                logger.info("_get_router: retrieval agent initialised lazily")
+            except Exception as exc:
+                logger.warning(
+                    "_get_router: retrieval agent init failed (%s) — retrieval will be unavailable",
+                    exc,
+                )
+                app.state.retrieval_agent = None
         app.state.workflow_router = WorkflowRouter(retrieval_agent=retrieval_agent)
     return app.state.workflow_router
 
