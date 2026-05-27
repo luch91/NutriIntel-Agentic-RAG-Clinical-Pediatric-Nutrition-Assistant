@@ -40,6 +40,7 @@ class GeneralWorkflow:
 
         response_data: Dict[str, Any] = {
             "query_type": "general",
+            "query": user_message,
             "evidence": evidence_passages,
         }
 
