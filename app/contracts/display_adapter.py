@@ -17,6 +17,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.agents.response_synthesiser import ResponseSynthesiser
 from app.classification.intent_labels import IntentLabel
 from app.contracts.response_contracts import (
     CPNAResponse,
@@ -91,6 +92,9 @@ def strip_forbidden_fields(data: Any) -> Any:
 
 class DisplayAdapter:
 
+    def __init__(self, synthesiser: Optional[ResponseSynthesiser] = None) -> None:
+        self._synthesiser = synthesiser or ResponseSynthesiser()
+
     def adapt(self, workflow_result: WorkflowResult) -> CPNAResponse:
         query_type = workflow_result.query_type
         data = strip_forbidden_fields(workflow_result.response_data)
@@ -137,13 +141,23 @@ class DisplayAdapter:
         if precision_note:
             assumptions.append(precision_note)
 
+        # LLM prose synthesis — rewrites summary + patient_summary only
+        synth = self._synthesiser.synthesise_therapy(
+            patient_summary=patient_summary,
+            nutrient_targets=data.get("nutrient_targets", []),
+            drug_notes=data.get("drug_nutrient_notes", []),
+            evidence=data.get("evidence", []),
+        )
+        final_summary = synth.get("summary") or (
+            "A deterministic therapy plan has been computed based on the patient's "
+            "confirmed clinical profile."
+        )
+        final_patient_summary = synth.get("patient_summary") or patient_summary
+
         return TherapyResponse(
             title="Personalised Nutrition Therapy Plan",
-            summary=(
-                "A deterministic therapy plan has been computed based on the patient's "
-                "confirmed clinical profile."
-            ),
-            patient_summary=patient_summary,
+            summary=final_summary,
+            patient_summary=final_patient_summary,
             assumptions_used=assumptions,
             nutrient_targets=nutrient_targets,
             drug_nutrient_notes=drug_notes,
@@ -181,20 +195,30 @@ class DisplayAdapter:
 
         therapy_upgrade_note: Optional[str] = data.get("therapy_upgrade_note")
 
+        # LLM prose synthesis
+        synth = self._synthesiser.synthesise_recommendation(
+            evidence=data.get("evidence", []),
+            context_summary=data.get("context_summary", ""),
+            condition_hint=data.get("condition", ""),
+        )
+        final_summary = synth.get("summary") or (
+            "Evidence-based dietary recommendations based on the available information."
+        )
+        final_context = synth.get("context_summary") or (
+            "Recommendations are based on general paediatric nutrition guidelines "
+            "and the current clinical context."
+        )
+        final_guidance = synth.get("practical_guidance") or (
+            "Focus on a varied, balanced diet rich in whole foods appropriate to "
+            "the child's age and clinical needs."
+        )
+
         return RecommendationResponse(
             title="Dietary Guidance",
-            summary=(
-                "Evidence-based dietary recommendations based on the available information."
-            ),
-            context_summary=(
-                "Recommendations are based on general paediatric nutrition guidelines "
-                "and the current clinical context."
-            ),
+            summary=final_summary,
+            context_summary=final_context,
             nutrient_preview=nutrient_preview if nutrient_preview else None,
-            practical_guidance=(
-                "Focus on a varied, balanced diet rich in whole foods appropriate to "
-                "the child's age and clinical needs."
-            ),
+            practical_guidance=final_guidance,
             foods_to_emphasize=self._extract_foods_to_emphasize(data.get("evidence", [])),
             foods_to_limit=[],
             therapy_upgrade_note=therapy_upgrade_note,
@@ -239,20 +263,33 @@ class DisplayAdapter:
                 points_b=[],
             )
 
+        # LLM prose synthesis
+        synth = self._synthesiser.synthesise_comparison(
+            entity_a=entity_a,
+            entity_b=entity_b,
+            evidence=data.get("evidence", []),
+            comparison_mode=comparison_mode,
+        )
+        final_summary = synth.get("summary") or (
+            f"A {comparison_mode} comparison of {entity_a} and {entity_b}."
+        )
+        final_takeaway = synth.get("executive_takeaway") or (
+            f"Both {entity_a} and {entity_b} have distinct nutritional profiles. "
+            "Review the details below to inform your decision."
+        )
+        final_interpretation = synth.get("interpretation") or (
+            "Consult a registered dietitian for context-specific guidance."
+        )
+
         return ComparisonResponse(
             title=f"{entity_a} vs {entity_b}",
-            summary=f"A {comparison_mode} comparison of {entity_a} and {entity_b}.",
+            summary=final_summary,
             entities=[entity_a, entity_b],
             context_or_assumptions=data.get("context_or_assumptions"),
-            executive_takeaway=(
-                f"Both {entity_a} and {entity_b} have distinct nutritional profiles. "
-                "Review the details below to inform your decision."
-            ),
+            executive_takeaway=final_takeaway,
             comparison_mode=comparison_mode,
             matrix_or_points=matrix_or_points,
-            interpretation=(
-                "Consult a registered dietitian for context-specific guidance."
-            ),
+            interpretation=final_interpretation,
             decision_rules=[],
             follow_up_hint="Would you like a deeper breakdown of any specific nutrient?",
             evidence_summary=evidence_summary,
@@ -265,16 +302,27 @@ class DisplayAdapter:
     def _adapt_general(self, data: dict) -> GeneralResponse:
         evidence_summary = self._build_evidence_summary(data.get("evidence", []))
 
+        # LLM prose synthesis
+        synth = self._synthesiser.synthesise_general(
+            query_hint=data.get("query", data.get("summary", "")),
+            evidence=data.get("evidence", []),
+        )
+        final_summary = synth.get("summary") or (
+            "Evidence-based information from paediatric nutrition references."
+        )
+        final_direct_answer = synth.get("direct_answer") or (
+            "Please refer to the evidence excerpts below for detailed information."
+        )
+        final_explanation = synth.get("explanation") or (
+            "The following information is drawn from established paediatric nutrition "
+            "guidelines and clinical references."
+        )
+
         return GeneralResponse(
             title="Nutrition Information",
-            summary="Evidence-based information from paediatric nutrition references.",
-            direct_answer=(
-                "Please refer to the evidence excerpts below for detailed information."
-            ),
-            explanation=(
-                "The following information is drawn from established paediatric nutrition "
-                "guidelines and clinical references."
-            ),
+            summary=final_summary,
+            direct_answer=final_direct_answer,
+            explanation=final_explanation,
             examples=None,
             transition_note=None,
             follow_up_hint=(
