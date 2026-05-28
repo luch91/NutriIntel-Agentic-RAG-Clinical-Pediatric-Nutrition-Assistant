@@ -23,5 +23,6 @@ PuLP==2.9.0
 anthropic==0.56.0
 httpx==0.28.1
 groq==1.2.0
+fastembed==0.4.2
 # sentence-transformers excluded: pulls torch (~800MB), exceeds Vercel 250MB lambda limit.
-# Real IntentClassifier is available locally; Vercel falls back to MockIntentClassifier.
+# VectorRetriever falls back to fastembed (ONNX-based) for query embeddings on Vercel.

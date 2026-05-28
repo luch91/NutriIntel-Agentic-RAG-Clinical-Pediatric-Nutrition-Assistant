@@ -40,7 +40,6 @@ class VectorRetriever:
         model: Optional[object] = None,
     ) -> None:
         from qdrant_client import QdrantClient
-        from sentence_transformers import SentenceTransformer
 
         if qdrant_client is not None:
             self._client = qdrant_client
@@ -58,12 +57,36 @@ class VectorRetriever:
                 self._client = QdrantClient(":memory:")
                 logger.info("VectorRetriever: using in-memory Qdrant (no QDRANT_URL set)")
 
-        self._model = model or SentenceTransformer(_MODEL_NAME)
+        # Model is loaded lazily on first embed_query/index call so this class
+        # can be constructed even when sentence-transformers is not installed.
+        self._model = model  # None → lazy-loaded in _get_model()
         self._ensure_collection()
 
     # ------------------------------------------------------------------
     # Setup
     # ------------------------------------------------------------------
+
+    def _get_model(self):
+        """Return the embedding model, loading it lazily on first call.
+
+        Tries sentence-transformers first (full accuracy, requires torch).
+        Falls back to fastembed (ONNX-based, no torch, ~same quality for MiniLM).
+        """
+        if self._model is not None:
+            return self._model
+        try:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(_MODEL_NAME)
+            logger.info("VectorRetriever: loaded SentenceTransformer model %s", _MODEL_NAME)
+        except ImportError:
+            try:
+                from fastembed import TextEmbedding
+                self._model = _FastEmbedWrapper(TextEmbedding(model_name="BAAI/bge-small-en-v1.5"))
+                logger.info("VectorRetriever: sentence-transformers unavailable, using fastembed")
+            except ImportError:
+                logger.error("VectorRetriever: neither sentence-transformers nor fastembed available — vector search disabled")
+                self._model = None
+        return self._model
 
     def _ensure_collection(self) -> None:
         from qdrant_client.http.models import Distance, VectorParams
@@ -86,8 +109,9 @@ class VectorRetriever:
 
         to_embed = [p for p in passages if p.embedding is None]
         if to_embed:
+            model = self._get_model()
             texts = [p.text for p in to_embed]
-            vectors = self._model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+            vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
             for passage, vec in zip(to_embed, vectors):
                 passage.embedding = vec.tolist()
 
@@ -159,13 +183,28 @@ class VectorRetriever:
 
     def embed_query(self, text: str) -> List[float]:
         """Encode a query string into a vector."""
-        vec = self._model.encode([text], show_progress_bar=False, convert_to_numpy=True)
+        model = self._get_model()
+        if model is None:
+            return [0.0] * _VECTOR_DIM
+        vec = model.encode([text], show_progress_bar=False, convert_to_numpy=True)
         return vec[0].tolist()
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+class _FastEmbedWrapper:
+    """Thin adapter so fastembed.TextEmbedding has the same .encode() interface as SentenceTransformer."""
+
+    def __init__(self, model) -> None:
+        self._model = model
+
+    def encode(self, texts, show_progress_bar=False, convert_to_numpy=True):
+        import numpy as np
+        embeddings = list(self._model.embed(texts))
+        return np.array(embeddings)
+
 
 def _stable_int_id(passage_id: str) -> int:
     """Convert any passage_id string to a stable positive int for Qdrant point IDs."""

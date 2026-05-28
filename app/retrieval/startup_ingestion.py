@@ -49,7 +49,7 @@ def _build_and_ingest():
     from app.retrieval.vector_retrieval import VectorRetriever
 
     logger.info("startup_ingestion: initialising retrieval components")
-    vector_retriever = VectorRetriever()   # auto-detects cloud vs in-memory
+    vector_retriever = VectorRetriever()   # auto-detects cloud vs in-memory; model loaded lazily
     bm25_retriever = BM25Retriever()
 
     if os.environ.get("QDRANT_URL"):
@@ -57,8 +57,24 @@ def _build_and_ingest():
         # Load the pre-serialized BM25 corpus if it exists next to this file.
         bm25_path = _DATA_DIR.parent.parent.parent / "bm25_corpus.pkl"
         if bm25_path.exists():
-            bm25_retriever.load(str(bm25_path))
-            logger.info("startup_ingestion: loaded BM25 corpus from %s", bm25_path)
+            # Guard against Git LFS pointer files being deployed instead of the
+            # actual binary (Vercel does not pull LFS objects by default).
+            raw = bm25_path.read_bytes()
+            if raw[:4] == b"vers" and b"git-lfs" in raw[:200]:
+                logger.warning(
+                    "startup_ingestion: bm25_corpus.pkl is a Git LFS pointer, not the real "
+                    "binary — BM25 search will be empty. Enable LFS on Vercel or upload the "
+                    "corpus to external storage."
+                )
+            else:
+                try:
+                    bm25_retriever.load(str(bm25_path))
+                    logger.info("startup_ingestion: loaded BM25 corpus from %s", bm25_path)
+                except Exception as exc:
+                    logger.warning(
+                        "startup_ingestion: failed to load BM25 corpus (%s) — BM25 will be empty",
+                        exc,
+                    )
         else:
             logger.warning(
                 "startup_ingestion: QDRANT_URL set but no bm25_corpus.pkl found at %s "
