@@ -122,9 +122,11 @@ def _get_router() -> WorkflowRouter:
             app.state.workflow_router = None
             logger.info("_get_router: retrieval agent initialised lazily")
         except Exception as exc:
+            import traceback as _tb
             logger.warning(
-                "_get_router: retrieval agent init failed (%s) — retrieval will be unavailable",
-                exc,
+                "_get_router: retrieval agent init failed (%s) — retrieval will be unavailable\n%s",
+                str(exc).encode("ascii", "replace").decode("ascii"),
+                _tb.format_exc()[:800],
             )
     if app.state.workflow_router is None:
         app.state.workflow_router = WorkflowRouter(retrieval_agent=retrieval_agent)
