@@ -23,6 +23,8 @@ PuLP==2.9.0
 anthropic==0.56.0
 httpx==0.28.1
 groq==1.2.0
+onnxruntime==1.20.1
 fastembed==0.8.0
 # sentence-transformers excluded: pulls torch (~800MB), exceeds Vercel 250MB lambda limit.
 # VectorRetriever falls back to fastembed (ONNX-based) for query embeddings on Vercel.
+# onnxruntime pinned explicitly so fastembed build is deterministic on Vercel.
