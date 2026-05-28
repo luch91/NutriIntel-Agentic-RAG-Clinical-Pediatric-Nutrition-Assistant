@@ -60,7 +60,8 @@ class VectorRetriever:
         # Model is loaded lazily on first embed_query/index call so this class
         # can be constructed even when sentence-transformers is not installed.
         self._model = model  # None → lazy-loaded in _get_model()
-        self._ensure_collection()
+        # Collection check is deferred to index() — skipped on cloud mode where
+        # the collection is pre-built, avoiding an HTTP roundtrip during __init__.
 
     # ------------------------------------------------------------------
     # Setup
@@ -90,6 +91,7 @@ class VectorRetriever:
         return self._model
 
     def _ensure_collection(self) -> None:
+        """Create the Qdrant collection if it doesn't exist. Called only during index()."""
         from qdrant_client.http.models import Distance, VectorParams
         existing = {c.name for c in self._client.get_collections().collections}
         if _COLLECTION not in existing:
@@ -107,6 +109,7 @@ class VectorRetriever:
         from qdrant_client.http.models import PointStruct
         if not passages:
             return
+        self._ensure_collection()
 
         to_embed = [p for p in passages if p.embedding is None]
         if to_embed:
