@@ -52,7 +52,7 @@ def _build_and_ingest():
     vector_retriever = VectorRetriever()   # auto-detects cloud vs in-memory; model loaded lazily
     bm25_retriever = BM25Retriever()
 
-    if os.environ.get("QDRANT_URL"):
+    if (os.environ.get("QDRANT_URL") or "").strip().lstrip("﻿"):
         # Cloud mode — vector index already populated by build_cloud_index.py.
         # Load the pre-serialized BM25 corpus if it exists next to this file.
         bm25_path = _DATA_DIR.parent.parent.parent / "bm25_corpus.pkl"

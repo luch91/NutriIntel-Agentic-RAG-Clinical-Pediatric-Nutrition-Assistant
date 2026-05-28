@@ -108,7 +108,7 @@ class ResponseSynthesiser:
     def _get_client(self) -> Optional[object]:
         if self._client is not None:
             return self._client
-        api_key = os.environ.get("GROQ_API_KEY", "")
+        api_key = (os.environ.get("GROQ_API_KEY") or "").strip().lstrip("﻿")
         if not api_key:
             return None
         try:

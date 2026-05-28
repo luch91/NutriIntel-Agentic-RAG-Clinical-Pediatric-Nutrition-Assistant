@@ -44,8 +44,8 @@ class VectorRetriever:
         if qdrant_client is not None:
             self._client = qdrant_client
         else:
-            qdrant_url = os.environ.get("QDRANT_URL")
-            qdrant_api_key = os.environ.get("QDRANT_API_KEY")
+            qdrant_url = (os.environ.get("QDRANT_URL") or "").strip().lstrip("﻿") or None
+            qdrant_api_key = (os.environ.get("QDRANT_API_KEY") or "").strip().lstrip("﻿") or None
             if qdrant_url:
                 self._client = QdrantClient(
                     url=qdrant_url,
