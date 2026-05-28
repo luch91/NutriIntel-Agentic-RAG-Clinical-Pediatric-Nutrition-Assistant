@@ -81,8 +81,9 @@ class VectorRetriever:
         except ImportError:
             try:
                 from fastembed import TextEmbedding
-                self._model = _FastEmbedWrapper(TextEmbedding(model_name="BAAI/bge-small-en-v1.5"))
-                logger.info("VectorRetriever: sentence-transformers unavailable, using fastembed")
+                # Must use the same model as the indexed collection (all-MiniLM-L6-v2, 384-dim)
+                self._model = _FastEmbedWrapper(TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2"))
+                logger.info("VectorRetriever: sentence-transformers unavailable, using fastembed (all-MiniLM-L6-v2)")
             except ImportError:
                 logger.error("VectorRetriever: neither sentence-transformers nor fastembed available — vector search disabled")
                 self._model = None
