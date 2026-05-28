@@ -116,13 +116,18 @@ class MockIntentClassifier:
     Same interface as IntentClassifier — no model loading required.
     """
 
-    _THERAPY_KEYWORDS = [
-        "plan", "personalized", "personalised", "therapy", "meal plan", "targets",
-        "calculate", "my child", "my patient", "nutrition plan", "diet plan",
-        "years old", "year old", "kg", "weight", "height", "diagnosis",
-        "cystic fibrosis", "diabetes", "kidney disease", "epilepsy", "ketogenic",
-        "ibd", "gerd", "pku", "msud", "galactosemia", "preterm", "food allergy",
+    # Strong therapy signals — presence alone implies patient-specific planning
+    _THERAPY_STRONG = [
+        "meal plan", "nutrition plan", "diet plan", "personalized", "personalised",
+        "calculate", "my child", "my patient", "targets",
+        "years old", "year old", " kg", "kg,", "weight", "height", "diagnosis",
     ]
+    # Condition names only count as therapy when combined with a strong signal
+    _THERAPY_CONDITIONS = [
+        "cystic fibrosis", "type 1 diabetes", "type 2 diabetes", "kidney disease",
+        "epilepsy", "ketogenic", "pku", "msud", "galactosemia", "preterm",
+    ]
+    _THERAPY_KEYWORDS = _THERAPY_STRONG  # used in primary check
     _RECOMMENDATION_KEYWORDS = [
         "recommend", "diet for", "guidance", "should eat", "good for",
         "best food", "foods for", "intake for", "intake of", "how much",
@@ -132,7 +137,7 @@ class MockIntentClassifier:
     _COMPARISON_KEYWORDS = [
         "compare", "vs", "versus", "difference between", "better than",
         "which is", "which has more", "higher in", "lower in", "more than",
-        "less than", "or ", "contrast",
+        "less than", "contrast",
     ]
 
     def classify(self, text: str) -> ClassificationResult:
@@ -146,7 +151,9 @@ class MockIntentClassifier:
             )
 
         lower = text.lower()
-        if any(kw in lower for kw in self._THERAPY_KEYWORDS):
+        has_condition = any(kw in lower for kw in self._THERAPY_CONDITIONS)
+        has_strong = any(kw in lower for kw in self._THERAPY_STRONG)
+        if has_strong or (has_condition and ("plan" in lower or "my" in lower)):
             label = IntentLabel.THERAPY
         elif any(kw in lower for kw in self._RECOMMENDATION_KEYWORDS):
             label = IntentLabel.RECOMMENDATION
