@@ -116,9 +116,24 @@ class MockIntentClassifier:
     Same interface as IntentClassifier — no model loading required.
     """
 
-    _THERAPY_KEYWORDS = ["plan", "personalized", "therapy", "meal plan", "targets"]
-    _RECOMMENDATION_KEYWORDS = ["recommend", "diet for", "guidance"]
-    _COMPARISON_KEYWORDS = ["compare", "vs", "difference between"]
+    _THERAPY_KEYWORDS = [
+        "plan", "personalized", "personalised", "therapy", "meal plan", "targets",
+        "calculate", "my child", "my patient", "nutrition plan", "diet plan",
+        "years old", "year old", "kg", "weight", "height", "diagnosis",
+        "cystic fibrosis", "diabetes", "kidney disease", "epilepsy", "ketogenic",
+        "ibd", "gerd", "pku", "msud", "galactosemia", "preterm", "food allergy",
+    ]
+    _RECOMMENDATION_KEYWORDS = [
+        "recommend", "diet for", "guidance", "should eat", "good for",
+        "best food", "foods for", "intake for", "intake of", "how much",
+        "what to eat", "dietary", "nutrition for", "suggested", "appropriate",
+        "suitable", "optimal", "foods to", "nutrient", "nutrients for",
+    ]
+    _COMPARISON_KEYWORDS = [
+        "compare", "vs", "versus", "difference between", "better than",
+        "which is", "which has more", "higher in", "lower in", "more than",
+        "less than", "or ", "contrast",
+    ]
 
     def classify(self, text: str) -> ClassificationResult:
         if len(text) < 4:
