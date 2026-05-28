@@ -136,7 +136,7 @@ class ResponseSynthesiser:
             text = response.choices[0].message.content.strip()
             return text or None
         except Exception as exc:
-            logger.warning("ResponseSynthesiser: API error — %s", exc)
+            logger.warning("ResponseSynthesiser: API error — %s", str(exc).encode("ascii", "replace").decode("ascii"))
             return None
 
     # ------------------------------------------------------------------

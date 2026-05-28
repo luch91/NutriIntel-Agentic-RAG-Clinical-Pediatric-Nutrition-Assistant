@@ -110,21 +110,23 @@ def _get_state_manager() -> StateManager:
 
 
 def _get_router() -> WorkflowRouter:
+    # Re-attempt retrieval init if a previous attempt failed (retrieval_agent stays None).
+    # Only cache the router once retrieval is successfully initialised.
+    retrieval_agent = getattr(app.state, "retrieval_agent", None)
+    if retrieval_agent is None:
+        try:
+            from app.retrieval.startup_ingestion import get_retrieval_agent
+            retrieval_agent = get_retrieval_agent()
+            app.state.retrieval_agent = retrieval_agent
+            # Invalidate any cached router built without retrieval so it gets rebuilt below.
+            app.state.workflow_router = None
+            logger.info("_get_router: retrieval agent initialised lazily")
+        except Exception as exc:
+            logger.warning(
+                "_get_router: retrieval agent init failed (%s) — retrieval will be unavailable",
+                exc,
+            )
     if app.state.workflow_router is None:
-        # Lazy-initialise retrieval agent if lifespan didn't fire (e.g. Vercel serverless).
-        retrieval_agent = getattr(app.state, "retrieval_agent", None)
-        if retrieval_agent is None:
-            try:
-                from app.retrieval.startup_ingestion import get_retrieval_agent
-                retrieval_agent = get_retrieval_agent()
-                app.state.retrieval_agent = retrieval_agent
-                logger.info("_get_router: retrieval agent initialised lazily")
-            except Exception as exc:
-                logger.warning(
-                    "_get_router: retrieval agent init failed (%s) — retrieval will be unavailable",
-                    exc,
-                )
-                app.state.retrieval_agent = None
         app.state.workflow_router = WorkflowRouter(retrieval_agent=retrieval_agent)
     return app.state.workflow_router
 
