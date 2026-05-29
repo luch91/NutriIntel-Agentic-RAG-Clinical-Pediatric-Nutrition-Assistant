@@ -210,10 +210,11 @@ class ResponseSynthesiser:
         user_prompt = (
             f"Context: {_truncate(context_summary, 300)}\n\n"
             f"Retrieved evidence{condition_str}:\n{evidence_text}\n\n"
-            f"Reply with exactly three sections separated by '|||' — no labels, no numbering:\n"
-            f"[One sentence summarising the dietary recommendation]"
-            f"|||[One sentence stating what this recommendation covers]"
-            f"|||[Two to three sentences of practical guidance from the evidence]"
+            f"Write exactly three parts, each on its own line, separated by '|||'.\n"
+            f"Part 1: one sentence summarising the dietary recommendation.\n"
+            f"Part 2: one sentence stating what this recommendation covers.\n"
+            f"Part 3: two to three sentences of practical guidance from the evidence.\n"
+            f"Output format: <Part 1> ||| <Part 2> ||| <Part 3>"
         )
         raw = self._call(_SYSTEM_RECOMMENDATION, user_prompt)
 
@@ -246,10 +247,11 @@ class ResponseSynthesiser:
             f"Comparing: {entity_a} vs {entity_b}\n"
             f"Mode: {comparison_mode}\n\n"
             f"Retrieved evidence:\n{evidence_text}\n\n"
-            f"Reply with exactly three sections separated by '|||' — no labels, no numbering:\n"
-            f"[One sentence summarising the comparison]"
-            f"|||[One to two sentences on the most clinically relevant difference]"
-            f"|||[One to two sentences guiding clinical application]"
+            f"Write exactly three parts, each on its own line, separated by '|||'.\n"
+            f"Part 1: one sentence summarising the comparison.\n"
+            f"Part 2: one to two sentences on the most clinically relevant difference.\n"
+            f"Part 3: one to two sentences guiding clinical application.\n"
+            f"Output format: <Part 1> ||| <Part 2> ||| <Part 3>"
         )
         raw = self._call(_SYSTEM_COMPARISON, user_prompt)
 
@@ -279,10 +281,11 @@ class ResponseSynthesiser:
         user_prompt = (
             f"User question (paraphrased): {_truncate(query_hint, 200)}\n\n"
             f"Retrieved evidence:\n{evidence_text}\n\n"
-            f"Reply with exactly three sections separated by '|||' — no labels, no numbering:\n"
-            f"[One sentence summarising the topic]"
-            f"|||[One to two sentences directly answering the question]"
-            f"|||[Two to three sentences of explanation with supporting detail]"
+            f"Write exactly three parts, each on its own line, separated by '|||'.\n"
+            f"Part 1: one sentence summarising the topic.\n"
+            f"Part 2: one to two sentences directly answering the question.\n"
+            f"Part 3: two to three sentences of explanation with supporting detail.\n"
+            f"Output format: <Part 1> ||| <Part 2> ||| <Part 3>"
         )
         raw = self._call(_SYSTEM_GENERAL, user_prompt)
 
