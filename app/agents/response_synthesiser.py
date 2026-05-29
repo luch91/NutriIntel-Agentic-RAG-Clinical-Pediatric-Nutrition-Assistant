@@ -77,6 +77,14 @@ def _truncate(text: str, max_chars: int = 1200) -> str:
     return text[:max_chars] + "…" if len(text) > max_chars else text
 
 
+import re as _re
+_LABEL_PREFIX = _re.compile(r"^\d+\.\s*")
+
+def _clean_part(text: str) -> str:
+    """Strip leading numbered labels the model echoes back (e.g. '1. ')."""
+    return _LABEL_PREFIX.sub("", text).strip() or None
+
+
 def _format_evidence(evidence_items: list) -> str:
     """Format evidence excerpts into a concise context block."""
     if not evidence_items:
@@ -202,17 +210,16 @@ class ResponseSynthesiser:
         user_prompt = (
             f"Context: {_truncate(context_summary, 300)}\n\n"
             f"Retrieved evidence{condition_str}:\n{evidence_text}\n\n"
-            f"Task: Write:\n"
-            f"1. A 1-sentence summary of the dietary recommendation.\n"
-            f"2. A 1-sentence context summary explaining what this recommendation covers.\n"
-            f"3. 2–3 sentences of practical guidance grounded in the evidence.\n"
-            f"Separate each with '|||'."
+            f"Reply with exactly three sections separated by '|||' — no labels, no numbering:\n"
+            f"[One sentence summarising the dietary recommendation]"
+            f"|||[One sentence stating what this recommendation covers]"
+            f"|||[Two to three sentences of practical guidance from the evidence]"
         )
         raw = self._call(_SYSTEM_RECOMMENDATION, user_prompt)
 
         summary = context_out = guidance = None
         if raw:
-            parts = [p.strip() for p in raw.split("|||")]
+            parts = [_clean_part(p) for p in raw.split("|||")]
             summary = parts[0] if len(parts) > 0 else None
             context_out = parts[1] if len(parts) > 1 else None
             guidance = parts[2] if len(parts) > 2 else None
@@ -239,17 +246,16 @@ class ResponseSynthesiser:
             f"Comparing: {entity_a} vs {entity_b}\n"
             f"Mode: {comparison_mode}\n\n"
             f"Retrieved evidence:\n{evidence_text}\n\n"
-            f"Task: Write:\n"
-            f"1. A 1-sentence summary of the comparison.\n"
-            f"2. A 1–2 sentence executive takeaway highlighting the most clinically relevant difference.\n"
-            f"3. A 1–2 sentence interpretation guiding clinical application.\n"
-            f"Separate each with '|||'."
+            f"Reply with exactly three sections separated by '|||' — no labels, no numbering:\n"
+            f"[One sentence summarising the comparison]"
+            f"|||[One to two sentences on the most clinically relevant difference]"
+            f"|||[One to two sentences guiding clinical application]"
         )
         raw = self._call(_SYSTEM_COMPARISON, user_prompt)
 
         summary = takeaway = interpretation = None
         if raw:
-            parts = [p.strip() for p in raw.split("|||")]
+            parts = [_clean_part(p) for p in raw.split("|||")]
             summary = parts[0] if len(parts) > 0 else None
             takeaway = parts[1] if len(parts) > 1 else None
             interpretation = parts[2] if len(parts) > 2 else None
@@ -273,17 +279,16 @@ class ResponseSynthesiser:
         user_prompt = (
             f"User question (paraphrased): {_truncate(query_hint, 200)}\n\n"
             f"Retrieved evidence:\n{evidence_text}\n\n"
-            f"Task: Write:\n"
-            f"1. A 1-sentence summary of the topic.\n"
-            f"2. A direct answer to the question in 1–2 sentences.\n"
-            f"3. A 2–3 sentence explanation with supporting detail from the evidence.\n"
-            f"Separate each with '|||'."
+            f"Reply with exactly three sections separated by '|||' — no labels, no numbering:\n"
+            f"[One sentence summarising the topic]"
+            f"|||[One to two sentences directly answering the question]"
+            f"|||[Two to three sentences of explanation with supporting detail]"
         )
         raw = self._call(_SYSTEM_GENERAL, user_prompt)
 
         summary = direct_answer = explanation = None
         if raw:
-            parts = [p.strip() for p in raw.split("|||")]
+            parts = [_clean_part(p) for p in raw.split("|||")]
             summary = parts[0] if len(parts) > 0 else None
             direct_answer = parts[1] if len(parts) > 1 else None
             explanation = parts[2] if len(parts) > 2 else None
