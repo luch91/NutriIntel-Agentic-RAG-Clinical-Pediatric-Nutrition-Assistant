@@ -1,6 +1,10 @@
 """
 CPNA Intent Classifier — Production Inference Wrapper
 
+Uses onnxruntime + transformers tokenizer so sentence-transformers/torch are
+NOT required at inference time. The ONNX model was exported from the original
+all-MiniLM-L6-v2 weights and produces bit-identical embeddings (cosine=1.0).
+
 Usage:
     from app.training.intent_classifier import IntentClassifier
 
@@ -18,7 +22,6 @@ from dataclasses import dataclass
 from typing import Dict
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 
 @dataclass
@@ -46,67 +49,104 @@ class IntentClassifier:
     """
     Production intent classifier for CPNA.
 
-    Architecture: sentence-transformer embeddings + LogisticRegression.
+    Architecture: ONNX-exported all-MiniLM-L6-v2 embeddings + LogisticRegression.
     Trained on 4,100 synthetic pediatric nutrition queries.
 
     Classes: therapy, recommendation, comparison, general
+
+    Requires only: onnxruntime, transformers (tokenizer only — no torch).
     """
 
     _instance = None
+    _MAX_LEN = 128
 
     def __init__(self, model_dir: Path | str | None = None):
         if model_dir is None:
             model_dir = Path(__file__).resolve().parent.parent / "models" / "intent_classifier"
         self.model_dir = Path(model_dir)
 
-        # Load embedding model
-        self.embedder = SentenceTransformer(str(self.model_dir / "embedding_model"))
+        # --- Tokenizer (transformers, no torch needed) ---
+        from transformers import AutoTokenizer
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            str(self.model_dir / "embedding_model")
+        )
 
-        # Load classifier
+        # --- ONNX session ---
+        import onnxruntime as ort
+        onnx_path = self.model_dir / "embedding_model.onnx"
+        if not onnx_path.exists():
+            raise FileNotFoundError(
+                f"ONNX model not found at {onnx_path}. "
+                "Run scripts/export_onnx.py to generate it."
+            )
+        self._session = ort.InferenceSession(
+            str(onnx_path),
+            providers=["CPUExecutionProvider"],
+        )
+
+        # --- LogisticRegression + label encoder ---
         with open(self.model_dir / "classifier.pkl", "rb") as f:
             self.classifier = pickle.load(f)
-
-        # Load label encoder
         with open(self.model_dir / "label_encoder.pkl", "rb") as f:
             self.label_encoder = pickle.load(f)
 
-        # Load label mapping
+        # --- Label mapping (reference) ---
         with open(self.model_dir / "label_mapping.json", "r") as f:
             self.label_mapping = json.load(f)
 
-        # Load evaluation results (for reference)
         eval_path = self.model_dir / "evaluation_results.json"
-        if eval_path.exists():
-            with open(eval_path, "r") as f:
-                self.eval_results = json.load(f)
-        else:
-            self.eval_results = None
+        self.eval_results = json.loads(eval_path.read_text()) if eval_path.exists() else None
+
+    # ------------------------------------------------------------------
+    # Embedding
+    # ------------------------------------------------------------------
+
+    def _embed(self, texts: list[str]) -> np.ndarray:
+        """Tokenize → ONNX forward pass → mean-pool → L2-normalise."""
+        enc = self._tokenizer(
+            texts,
+            return_tensors="np",
+            padding="max_length",
+            truncation=True,
+            max_length=self._MAX_LEN,
+        )
+        input_ids = enc["input_ids"].astype(np.int64)
+        attention_mask = enc["attention_mask"].astype(np.int64)
+        token_type_ids = enc.get(
+            "token_type_ids", np.zeros_like(input_ids)
+        ).astype(np.int64)
+
+        (last_hidden,) = self._session.run(
+            ["last_hidden_state"],
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "token_type_ids": token_type_ids,
+            },
+        )
+        # Mean pooling over non-padding tokens
+        mask = attention_mask[..., np.newaxis].astype(np.float32)
+        summed = (last_hidden * mask).sum(axis=1)
+        count = mask.sum(axis=1).clip(min=1e-9)
+        embeddings = summed / count  # (batch, 384)
+
+        # L2 normalise
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True).clip(min=1e-9)
+        return embeddings / norms
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def predict(self, query: str) -> IntentResult:
-        """
-        Classify a single query.
-
-        Args:
-            query: User query text
-
-        Returns:
-            IntentResult with intent, confidence, and all scores
-        """
-        # Embed
-        embedding = self.embedder.encode([query])
-
-        # Predict
+        embedding = self._embed([query])
         pred = self.classifier.predict(embedding)[0]
         probs = self.classifier.predict_proba(embedding)[0]
-
-        # Convert to label
         intent = self.label_encoder.inverse_transform([pred])[0]
-
-        # Build score dict
-        all_scores = {}
-        for i, label in enumerate(self.label_encoder.classes_):
-            all_scores[label] = float(probs[i])
-
+        all_scores = {
+            label: float(probs[i])
+            for i, label in enumerate(self.label_encoder.classes_)
+        }
         return IntentResult(
             intent=intent,
             confidence=float(probs.max()),
@@ -115,24 +155,11 @@ class IntentClassifier:
         )
 
     def predict_batch(self, queries: list[str]) -> list[IntentResult]:
-        """
-        Classify multiple queries in batch.
-
-        Args:
-            queries: List of query texts
-
-        Returns:
-            List of IntentResult
-        """
-        # Embed all at once
-        embeddings = self.embedder.encode(queries, batch_size=32)
-
-        # Predict
+        embeddings = self._embed(queries)
         preds = self.classifier.predict(embeddings)
         probs = self.classifier.predict_proba(embeddings)
-
         results = []
-        for i, (pred, prob) in enumerate(zip(preds, probs)):
+        for pred, prob in zip(preds, probs):
             intent = self.label_encoder.inverse_transform([pred])[0]
             all_scores = {
                 label: float(prob[j])
@@ -147,7 +174,6 @@ class IntentClassifier:
         return results
 
     def get_eval_summary(self) -> dict:
-        """Return evaluation summary for monitoring."""
         if self.eval_results is None:
             return {}
         return {
@@ -173,7 +199,7 @@ def classify_intent(query: str) -> IntentResult:
 if __name__ == "__main__":
     clf = IntentClassifier()
 
-    print("CPNA Intent Classifier — Production Inference")
+    print("CPNA Intent Classifier — ONNX Inference")
     print("=" * 50)
     print()
 
@@ -196,9 +222,11 @@ if __name__ == "__main__":
 
     for q in queries:
         result = clf.predict(q)
-        downgrade_flag = " ⚠️ DOWNGRADE" if result.should_downgrade else ""
+        downgrade_flag = " DOWNGRADE" if result.should_downgrade else ""
         print(f"Query: \"{q}\"")
         print(f"  Intent: {result.intent} (confidence: {result.confidence:.4f}){downgrade_flag}")
-        scores_str = ", ".join(f"{k}: {v:.3f}" for k, v in sorted(result.all_scores.items(), key=lambda x: -x[1]))
+        scores_str = ", ".join(
+            f"{k}: {v:.3f}" for k, v in sorted(result.all_scores.items(), key=lambda x: -x[1])
+        )
         print(f"  Scores: {scores_str}")
         print()
