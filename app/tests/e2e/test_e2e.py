@@ -12,6 +12,7 @@ All 10 E2E scenarios. Uses:
 import json
 import uuid
 from typing import Any
+from unittest.mock import patch
 
 import fakeredis
 import pytest
@@ -95,17 +96,26 @@ class _StubRetrieval:
 
 @pytest.fixture(autouse=True)
 def wire_deps():
-    """Wire test doubles into app.state before every test."""
+    """Wire test doubles into app.state before every test.
+
+    Patches get_retrieval_agent so the lifespan skips PDF ingestion and
+    Qdrant connection — both are irrelevant for E2E tests which use _StubRetrieval.
+    """
+    stub = _StubRetrieval()
     redis = fakeredis.FakeRedis()
     sm = StateManager(redis_client=redis)
-    app.state.intent_classifier = MockIntentClassifier()
-    app.state.state_manager = sm
-    app.state.workflow_router = WorkflowRouter(retrieval_agent=_StubRetrieval())
-    app.state.display_adapter = DisplayAdapter()
-    yield
-    app.state.intent_classifier = None
-    app.state.state_manager = None
-    app.state.workflow_router = None
+
+    with patch("app.retrieval.startup_ingestion.get_retrieval_agent", return_value=stub):
+        app.state.intent_classifier = MockIntentClassifier()
+        app.state.state_manager = sm
+        app.state.workflow_router = WorkflowRouter(retrieval_agent=stub)
+        app.state.display_adapter = DisplayAdapter()
+        app.state.retrieval_agent = stub
+        yield
+        app.state.intent_classifier = None
+        app.state.state_manager = None
+        app.state.workflow_router = None
+        app.state.retrieval_agent = None
 
 
 def _client() -> TestClient:
@@ -146,7 +156,7 @@ def _prime_session(session_id: str, **entity_kwargs) -> None:
 def test_e2e_1_recommendation_basic():
     client = _client()
     sid = _sid()
-    body = _post(client, sid, "Diet for a 10 year old with diabetes")
+    body = _post(client, sid, "What foods are recommended for children with diabetes?")
     resp = body["response"]
 
     assert resp["query_type"] == "recommendation", f"Got {resp['query_type']}"
@@ -159,7 +169,7 @@ def test_e2e_1_recommendation_basic():
 
 def test_e2e_1_recommendation_has_no_raw_schema_strings():
     client = _client()
-    body = _post(client, _sid(), "Diet for a 10 year old with diabetes")
+    body = _post(client, _sid(), "What foods are recommended for children with diabetes?")
     text = json.dumps(body["response"])
     for bad in ["NutrientTargetRow", "DrugNutrientDisplay", "TherapyEngineResult"]:
         assert bad not in text, f"Raw schema string leaked: {bad}"
@@ -409,7 +419,7 @@ def _run_all_four_query_types(client: TestClient) -> list[dict]:
 
     responses = [
         _post(client, sid_g, "What does vitamin D do?")["response"],
-        _post(client, sid_r, "Diet for a 10 year old with diabetes")["response"],
+        _post(client, sid_r, "What foods are recommended for children with diabetes?")["response"],
         _post(client, sid_c, "Compare bambara nut to groundnut")["response"],
         _post(client, sid_t, "Give me his nutrition plan")["response"],
     ]
@@ -445,7 +455,7 @@ def test_e2e_8_all_pass_pydantic_validation():
 
 def test_e2e_9_no_button_dependency_recommendation():
     client = _client()
-    body = _post(client, _sid(), "Diet for a 10 year old with diabetes")
+    body = _post(client, _sid(), "What foods are recommended for children with diabetes?")
     resp = body["response"]
     resp_dict = resp
 
@@ -468,7 +478,7 @@ def test_e2e_9_no_button_dependency_general():
 def test_e2e_9_follow_up_hint_not_a_list():
     client = _client()
     for msg in [
-        "Diet for a 10 year old with diabetes",
+        "What foods are recommended for children with diabetes?",
         "What does vitamin D do in children?",
     ]:
         body = _post(client, _sid(), msg)
