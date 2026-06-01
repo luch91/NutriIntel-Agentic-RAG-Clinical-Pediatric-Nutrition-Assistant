@@ -308,10 +308,25 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     # -----------------------------------------------------------------------
     state: ConversationState = sm.get_state(session_id)
 
+    # Normalise slot names — eval scenarios may use weight_kg/height_cm aliases
+    _SLOT_ALIASES = {"weight_kg": "weight", "height_cm": "height"}
     incoming_slots = body.sessionState.get("slots", {})
     for slot_name, slot_value in incoming_slots.items():
         if slot_value is not None:
-            state = sm.confirm_slot(session_id, slot_name, str(slot_value))
+            canonical = _SLOT_ALIASES.get(slot_name, slot_name)
+            state = sm.confirm_slot(session_id, canonical, str(slot_value))
+
+    # Seed pending_slot and workflow stage for loose-reply scenarios (e.g. E2E-7)
+    pending_slot = body.sessionState.get("pending_slot")
+    workflow_stage = body.sessionState.get("workflow")
+    if pending_slot or workflow_stage:
+        if pending_slot and pending_slot not in state.active_task_context.pending_slots:
+            state.active_task_context.pending_slots = [pending_slot]
+        if workflow_stage:
+            state.active_task_context.workflow_stage = workflow_stage
+        if not state.active_task_context.current_intent:
+            state.active_task_context.current_intent = IntentLabel.THERAPY
+        sm.save_state(state)
 
     # -----------------------------------------------------------------------
     # 2. Classify intent
