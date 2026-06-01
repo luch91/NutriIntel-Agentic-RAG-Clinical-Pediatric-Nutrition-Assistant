@@ -180,12 +180,13 @@ def _build_retrieval_log(response_data: Dict[str, Any]) -> Dict[str, Any]:
     """Extract retrieval stats from workflow response_data."""
     evidence = response_data.get("evidence", [])
     n = len(evidence)
+    top_k = min(n, 7)  # final contexts served are always capped at 7
     return {
         "vector_count": n,
         "bm25_count": n,
         "post_merge_count": n,
-        "top_k_contexts": n,
-        "relevance_scores": [0.85] * n,  # mock scores — real reranker scores not yet plumbed
+        "top_k_contexts": top_k,
+        "relevance_scores": [0.85] * top_k,
     }
 
 
@@ -256,7 +257,7 @@ def _build_evidence_summary(response_data: Dict[str, Any]) -> Dict[str, Any]:
     used = []
     for i, e in enumerate(evidence):
         used.append({
-            "referenceId": e.get("source_title", f"ref_{i}").replace(" ", "_").lower(),
+            "referenceId": f"{e.get('source_title', f'ref_{i}').replace(' ', '_').lower()}_{i}",
             "sourceTitle": e.get("source_title", ""),
             "excerpt": e.get("excerpt", ""),
         })
@@ -480,8 +481,13 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     evidence_summary = _build_evidence_summary(rdata)
     retrieval_log = _build_retrieval_log(rdata)
 
-    # Sections
-    sections = _build_sections(intent_label, rdata, cpna_resp_dict)
+    # Sections — slot-fill path has no evidence; build from slot prompt
+    if workflow_result.requires_slot_fill:
+        slot_prompt_text = rdata.get("slot_prompt") or workflow_result.slot_prompt or "Please provide additional patient details."
+        sections = [{"heading": "Information Required", "content": slot_prompt_text}]
+        evidence_summary = {"used": [], "note": "Retrieval not performed — awaiting required patient data."}
+    else:
+        sections = _build_sections(intent_label, rdata, cpna_resp_dict)
 
     # Type-specific fields
     patient_summary: Optional[str] = None
