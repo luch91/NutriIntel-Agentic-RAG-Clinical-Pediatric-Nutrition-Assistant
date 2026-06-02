@@ -2,7 +2,7 @@
 
 An agentic RAG system that answers clinical pediatric nutrition queries using deterministic therapy planning, hybrid retrieval across medical textbooks and food composition tables, and structured conversation state management.
 
-**Live:** [frontend-kappa-umber-23.vercel.app](https://frontend-kappa-umber-23.vercel.app) · API: [nutriintel-api.vercel.app](https://nutriintel-api.vercel.app/api/health)
+**Frontend:** [nutriintel-frontend.vercel.app](https://nutriintel-frontend.vercel.app) · **API:** [nutriintel-api.vercel.app](https://nutriintel-api.vercel.app/api/health) · **Eval:** [cpna-eval-one.vercel.app](https://cpna-eval-one.vercel.app)
 
 ---
 
@@ -27,7 +27,7 @@ For **therapy queries**, the system collects required clinical slots (age, sex, 
 User message
     │
     ▼
-Intent Classifier (sentence-transformers + LogisticRegression, 98.6% F1)
+Intent Classifier (ONNX all-MiniLM-L6-v2 + LogisticRegression, 98.6% F1)
     │
     ├── THERAPY ──► Slot-filling agent → Therapy gatekeeper → Deterministic engine
     │                                                              ├── DRI lookup
@@ -40,14 +40,18 @@ Intent Classifier (sentence-transformers + LogisticRegression, 98.6% F1)
     └── GENERAL ──► General workflow
          │
          └── All workflows → Hybrid retrieval (vector + BM25 → rerank → top 7)
-                                  ├── Qdrant (sentence-transformers/all-MiniLM-L6-v2)
-                                  └── BM25 (rank-bm25)
+                                  ├── Qdrant Cloud (all-MiniLM-L6-v2, 384 dims)
+                                  └── BM25 (rank-bm25, pre-serialised corpus)
+                                       │
+                                       └── Synthesised prose via Groq (llama-3.1-8b-instant)
 ```
 
 **Key design properties:**
+- Intent classifier uses **ONNX-exported** `all-MiniLM-L6-v2` — no `torch` or `sentence-transformers` at runtime, compatible with Vercel's 250 MB Lambda limit
 - Phase-aware conversation state (`IDLE → SLOT_FILLING → DISPATCHING → RESPONDING`) prevents bare slot values ("10 year old", "30kg") from being misclassified as new queries
 - Source filter uses `source_title` matching — not `passage_id` — because passage IDs are MD5 hashes
-- Startup ingestion runs once at FastAPI lifespan, indexing all 34 knowledge PDFs before the first request
+- On Vercel, startup ingestion is **lazy per-request** (FastAPI `lifespan` does not fire on serverless); Qdrant Cloud is pre-populated and BM25 corpus is pre-serialised
+- Response prose is synthesised by Groq after retrieval; all numeric targets come from the deterministic engine
 - OCR fallback (PyMuPDF + Tesseract) for scanned PDFs where `PyPDFLoader` returns empty pages
 
 ---
@@ -84,14 +88,16 @@ Type 1 diabetes · Cystic fibrosis · Food allergy · Preterm nutrition · Chron
 |---|---|
 | Backend | Python 3.12, FastAPI, Pydantic v2 |
 | Frontend | Next.js 14 (App Router), TypeScript |
-| Vector store | Qdrant (in-memory) |
-| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` (384 dims) |
-| BM25 | `rank-bm25` |
-| Intent classifier | sentence-transformers + scikit-learn LogisticRegression |
+| Vector store | **Qdrant Cloud** (production) / in-memory (local dev) |
+| Embeddings | `all-MiniLM-L6-v2` via **ONNX Runtime** (no torch required) |
+| BM25 | `rank-bm25`, pre-serialised corpus (`bm25_corpus.pkl`) |
+| Intent classifier | ONNX all-MiniLM-L6-v2 + scikit-learn LogisticRegression |
+| LLM synthesis | **Groq** `llama-3.1-8b-instant` (prose fields only; numeric values never LLM-generated) |
 | PDF extraction | LangChain PyPDFLoader + PyMuPDF/Tesseract OCR fallback |
 | State | Redis (in-memory fallback when unavailable) |
 | Observability | structlog (JSON), Prometheus metrics |
-| Deployment | Vercel (backend + frontend, separate projects) |
+| Deployment | Vercel — backend (`nutriintel-api`) + frontend (`nutriintel-frontend`), separate projects |
+| Eval platform | CPNA Eval (`cpna-eval-one.vercel.app`) — 10 E2E scenarios, 96%+ overall score |
 
 ---
 
@@ -99,18 +105,22 @@ Type 1 diabetes · Cystic fibrosis · Food allergy · Preterm nutrition · Chron
 
 ```
 app/
-├── agents/           # RetrievalAgent, SlotFillingAgent, QueryRewriteAgent
-├── api/              # FastAPI router, schemas, eval endpoint
-├── classification/   # Intent classifier wrapper
+├── agents/           # RetrievalAgent, SlotFillingAgent, QueryRewriteAgent, ResponseSynthesiser
+├── api/              # FastAPI router, schemas, eval endpoint (/api/eval)
+├── classification/   # Intent classifier wrapper + MockIntentClassifier fallback
 ├── common/           # PDF loader, chapter extractor, metadata enricher, nutrient calculator
 ├── config/           # Condition routing config (source-to-condition mappings)
 ├── contracts/        # Response contracts, display adapter
 ├── engine/           # DeterministicNutrientEngine, DRI lookup, condition adjustments
 ├── models/           # Trained intent classifier artifacts (98.6% F1)
+│   └── intent_classifier/
+│       ├── embedding_model.onnx   # ONNX export of all-MiniLM-L6-v2 (87 MB, Git LFS)
+│       ├── classifier.pkl         # LogisticRegression weights (Git LFS)
+│       └── label_encoder.pkl      # Label encoder (Git LFS)
 ├── observability/    # Structured logger, Prometheus metrics
 ├── retrieval/        # VectorRetriever, BM25Retriever, IngestionPipeline, startup ingestion
 ├── state/            # ConversationState, StateManager
-├── tests/            # 217 unit + integration + e2e tests
+├── tests/            # Unit + integration + e2e tests
 └── workflows/        # TherapyWorkflow, RecommendationWorkflow, ComparisonWorkflow, GeneralWorkflow
 
 frontend/
@@ -140,24 +150,32 @@ npm install
 npm run dev
 ```
 
-The backend runs at `http://localhost:8000`. On first request, startup ingestion indexes all PDFs in `app/common/data/` — this takes ~2–3 minutes on first run.
+The backend runs at `http://localhost:8000`. On first request in local mode (no `QDRANT_URL` set), startup ingestion indexes all PDFs in `app/common/data/` — this takes ~2–3 minutes.
+
+**Environment variables (for cloud mode):**
+
+| Variable | Purpose |
+|---|---|
+| `QDRANT_URL` | Qdrant Cloud cluster URL |
+| `QDRANT_API_KEY` | Qdrant Cloud API key |
+| `GROQ_API_KEY` | Groq API key for prose synthesis |
+
+All three must be set in Vercel dashboard without a UTF-8 BOM — the code strips BOM (`﻿`) defensively.
 
 ---
 
 ## Tests
 
 ```bash
-# All unit tests
+# Unit tests
 pytest app/tests/unit/
 
-# Integration tests (requires sentence-transformers)
+# Integration tests
 pytest app/tests/integration/
 
-# E2E
-pytest app/tests/e2e/
+# E2E (uses MockIntentClassifier + stub retrieval, no real Qdrant needed)
+pytest app/tests/e2e/ --timeout=30
 ```
-
-217 tests, all passing.
 
 ---
 
@@ -167,6 +185,11 @@ pytest app/tests/e2e/
 POST /api/chat
   Body: { "session_id": "...", "message": "..." }
   Returns: ChatResponse (intent, response, slot_prompt if filling)
+
+POST /api/eval
+  Body: { "userMessage": "...", "conversationHistory": [...], "sessionState": {...} }
+  Headers: X-Eval-Secret: <EVAL_SECRET>
+  Returns: Full eval contract response (intent, gatekeeper, evidence, retrieval log)
 
 POST /api/session/reset
   Body: { "session_id": "..." }
@@ -180,9 +203,11 @@ GET  /metrics        (Prometheus)
 ## Retrieval Pipeline
 
 ```
-Query → LLM rewrite → vector search (top 20) → BM25 search (top 20)
+Query → LLM rewrite → vector search (top 20, Qdrant Cloud)
+                     → BM25 search (top 20, pre-serialised corpus)
       → merge + deduplicate → condition-aware source filter
       → priority source boosting → rerank → top 7 passages
+      → Groq synthesis → prose fields in response
 ```
 
 Source filtering uses `source_title` matching with case/separator normalisation so that routing keys like `"Shaw2020"` correctly match passages stored with titles like `"Clinical Paediatric Dietetics, 5th ed."`.
@@ -196,6 +221,21 @@ Four buckets: `session_memory`, `active_task_context`, `turn_entities`, `inherit
 Four phases: `IDLE → SLOT_FILLING → DISPATCHING → RESPONDING`
 
 During `SLOT_FILLING`, the intent classifier is bypassed — bare values like `"30kg"` are treated as slot answers, not new queries. On `DISPATCHING`, therapy workflow is forced regardless of the next classified intent.
+
+---
+
+## Eval Platform
+
+The CPNA Eval platform ([cpna-eval-one.vercel.app](https://cpna-eval-one.vercel.app)) runs 10 E2E scenarios against the live API via `/api/eval`, scoring across six dimensions:
+
+| Dimension | Score |
+|---|---|
+| Intent Accuracy | 100% |
+| Gatekeeper Pass Rate | 93% |
+| Contract Conformance | 93% |
+| Context Safety | 98% |
+| Retrieval Quality | 93% |
+| **Overall** | **96%** |
 
 ---
 
