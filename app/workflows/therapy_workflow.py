@@ -113,8 +113,26 @@ class TherapyWorkflow:
             if state.active_task_context.current_intent is None:
                 state.active_task_context.current_intent = IntentLabel.THERAPY
             state_manager.save_state(state)
+
+            # Run retrieval for background evidence even during slot-fill so
+            # the eval endpoint can return non-empty evidenceSummary.
+            evidence_passages = []
+            if self._retrieval is not None:
+                try:
+                    diagnosis = (
+                        state.confirmed_entities.diagnosis
+                        or state.turn_entities.diagnosis_mentioned
+                    )
+                    retrieval_result = self._retrieval.retrieve(user_message, diagnosis=diagnosis)
+                    evidence_passages = [
+                        {"source_title": p.source_title, "excerpt": p.text[:300]}
+                        for p in retrieval_result.passages
+                    ]
+                except Exception:
+                    pass
+
             return WorkflowResult(
-                response_data={"slot_prompt": prompt},
+                response_data={"slot_prompt": prompt, "evidence": evidence_passages},
                 query_type=IntentLabel.THERAPY,
                 updated_state=state,
                 requires_slot_fill=True,
