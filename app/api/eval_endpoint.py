@@ -117,15 +117,16 @@ class EvalResponse(BaseModel):
     slot_filling_triggered: bool
     downgrade_reason: Optional[str]
     user_facing_explanation: Optional[str]
-    nutrient_targets: Optional[List[Dict[str, Any]]]
+    nutrient_targets: Optional[List[Dict[str, Any]]]  # snake_case for internal use
 
-    # Contract evaluator (camelCase)
+    # Contract evaluator (camelCase — must match evaluator field names exactly)
     queryType: str
     title: str
     summary: str
     sections: List[Dict[str, Any]]
     evidenceSummary: Dict[str, Any]
     patientSummary: Optional[str]
+    nutrientTargets: Optional[List[Dict[str, Any]]]  # camelCase for contract evaluator
     recommendations: Optional[List[str]]
     entities: Optional[List[str]]
     executiveTakeaway: Optional[str]
@@ -616,6 +617,7 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
         sections=sections,
         evidenceSummary=evidence_summary,
         patientSummary=patient_summary,
+        nutrientTargets=nutrient_targets_list,
         recommendations=recommendations_list,
         entities=entities_list,
         executiveTakeaway=executive_takeaway,

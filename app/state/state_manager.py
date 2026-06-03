@@ -207,8 +207,18 @@ class StateManager:
             else:
                 items = [v.strip() for v in value.split(",") if v.strip()]
                 ce.medications = items if items else [value]
+        elif slot_name == "biomarkers":
+            # Store as dict if key:value pairs present, otherwise as {"raw": value}
+            if ":" in value:
+                pairs = {}
+                for part in value.split(","):
+                    if ":" in part:
+                        k, v = part.split(":", 1)
+                        pairs[k.strip()] = v.strip()
+                ce.biomarkers = pairs if pairs else {"raw": value.strip()}
+            else:
+                ce.biomarkers = {"raw": value.strip()}
         else:
-            # Unknown slot — store generically (biomarkers handled separately)
             logger.warning("confirm_slot: unrecognised slot '%s', skipping", slot_name)
 
         state.confirmed_entities = ce
