@@ -508,11 +508,13 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     evidence_summary = _build_evidence_summary(rdata)
     retrieval_log = _build_retrieval_log(rdata)
 
-    # Sections — slot-fill path has no evidence; build from slot prompt
+    # Sections — slot-fill path has no display contract; build from slot prompt
     if workflow_result.requires_slot_fill:
         slot_prompt_text = rdata.get("slot_prompt") or workflow_result.slot_prompt or "Please provide additional patient details."
         sections = [{"heading": "Information Required", "content": slot_prompt_text}]
-        evidence_summary = {"used": [], "note": "Retrieval not performed — awaiting required patient data."}
+        # Use evidence from workflow if retrieval ran during slot-fill; else empty note
+        if not rdata.get("evidence"):
+            evidence_summary = {"used": [], "note": "Retrieval not performed — awaiting required patient data."}
     else:
         sections = _build_sections(intent_label, rdata, cpna_resp_dict)
 
