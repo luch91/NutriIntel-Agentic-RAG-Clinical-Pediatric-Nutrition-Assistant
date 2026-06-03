@@ -155,7 +155,10 @@ class EvalResponse(BaseModel):
 # Helpers — map CPNA internal state → eval state_update
 # ---------------------------------------------------------------------------
 
-def _build_state_update(state: ConversationState) -> Dict[str, Any]:
+def _build_state_update(
+    state: ConversationState,
+    raw_slots: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     ctx = state.active_task_context
     ce = state.confirmed_entities
 
@@ -165,6 +168,11 @@ def _build_state_update(state: ConversationState) -> Dict[str, Any]:
         val = getattr(ce, field, None)
         if val is not None:
             slots[field] = val
+
+    # Preserve the original (pre-normalisation) diagnosis string so the eval
+    # platform's SUPPORTED_CONDITIONS check sees 'pku' not the routing key 'imd'.
+    if raw_slots and raw_slots.get("diagnosis"):
+        slots["diagnosis"] = str(raw_slots["diagnosis"]).lower()
 
     return {
         "slots": slots,
@@ -630,7 +638,7 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
         resolved_value=resolved_value_str,
         clarification_requested=False,
         retrieval_stage_log=retrieval_log,
-        state_update=_build_state_update(updated_state),
+        state_update=_build_state_update(updated_state, raw_slots=incoming_slots),
         latency_ms=round(latency_ms, 2),
     ).model_dump())
 
