@@ -512,9 +512,28 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     if workflow_result.requires_slot_fill:
         slot_prompt_text = rdata.get("slot_prompt") or workflow_result.slot_prompt or "Please provide additional patient details."
         sections = [{"heading": "Information Required", "content": slot_prompt_text}]
-        # Use evidence from workflow if retrieval ran during slot-fill; else empty note
+        # Fallback: if workflow retrieval didn't run (retrieval_agent was None),
+        # run retrieval directly from the eval endpoint using the app-level agent.
         if not rdata.get("evidence"):
-            evidence_summary = {"used": [], "note": "Retrieval not performed — awaiting required patient data."}
+            try:
+                _retrieval_agent = getattr(_cpna_app.state, "retrieval_agent", None)
+                if _retrieval_agent is not None:
+                    diagnosis = (
+                        state.confirmed_entities.diagnosis
+                        or state.turn_entities.diagnosis_mentioned
+                        or ""
+                    )
+                    _result = _retrieval_agent.retrieve(body.userMessage, diagnosis=diagnosis)
+                    rdata["evidence"] = [
+                        {"source_title": p.source_title, "excerpt": p.text[:300]}
+                        for p in _result.passages
+                    ]
+                    evidence_summary = _build_evidence_summary(rdata)
+                    retrieval_log = _build_retrieval_log(rdata)
+                else:
+                    evidence_summary = {"used": [], "note": "Retrieval not performed — awaiting required patient data."}
+            except Exception:
+                evidence_summary = {"used": [], "note": "Retrieval not performed — awaiting required patient data."}
     else:
         sections = _build_sections(intent_label, rdata, cpna_resp_dict)
 
