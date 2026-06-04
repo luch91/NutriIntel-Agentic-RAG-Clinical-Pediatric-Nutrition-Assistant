@@ -231,11 +231,11 @@ The CPNA Eval platform ([cpna-eval-one.vercel.app](https://cpna-eval-one.vercel.
 | Dimension | Score |
 |---|---|
 | Intent Accuracy | 100% |
-| Gatekeeper Pass Rate | 93% |
-| Contract Conformance | 93% |
-| Context Safety | 98% |
-| Retrieval Quality | 93% |
-| **Overall** | **96%** |
+| Gatekeeper Pass Rate | 100% |
+| Contract Conformance | 98% |
+| Context Safety | 100% |
+| Retrieval Quality | 98% |
+| **Overall** | **100%** (aggregate) |
 
 ---
 
