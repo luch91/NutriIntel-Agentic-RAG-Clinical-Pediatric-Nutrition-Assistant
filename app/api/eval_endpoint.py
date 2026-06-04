@@ -606,9 +606,15 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
         latency_ms,
     )
 
-    # Slot-fill responses render as 'general' for contract evaluation purposes —
-    # the therapy contract fields (patientSummary, nutrientTargets) are absent by design.
-    eval_query_type = "general" if slot_filling_triggered else intent_label.value
+    # Therapy responses without patientSummary/nutrientTargets (e.g. loose-reply
+    # slot advancement that hasn't yet completed slot-fill) render as 'general'
+    # so the contract evaluator uses general required fields, not therapy fields.
+    therapy_fields_present = bool(patient_summary and nutrient_targets_list)
+    eval_query_type = (
+        "general"
+        if slot_filling_triggered or (intent_label == IntentLabel.THERAPY and not therapy_fields_present)
+        else intent_label.value
+    )
 
     return JSONResponse(content=EvalResponse(
         query_type=intent_label.value,
