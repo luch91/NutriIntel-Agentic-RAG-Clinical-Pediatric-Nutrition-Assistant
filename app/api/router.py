@@ -255,6 +255,32 @@ async def chat(request: Request, body: ChatRequest) -> JSONResponse:
     else:
         goto_dispatch = False
 
+    # Phase 6b — clear stale pending_intent when the new message has unambiguous intent
+    # that is NOT a therapy initiation. A prior RECOMMENDATION sets pending_intent="therapy"
+    # anticipating the user will follow the upgrade CTA. But if the user instead sends a
+    # comparison or general query, that stale pending_intent must not hijack the turn.
+    if (
+        not goto_step3
+        and not goto_dispatch
+        and state.pending_intent == "therapy"
+        and state.phase == ConversationPhase.IDLE
+    ):
+        # Classify now to determine whether to honour or clear pending_intent
+        clf_result_peek = classifier.classify(body.message)
+        peek_label = clf_result_peek.label
+        _CLEAR_PENDING_FOR = {IntentLabel.COMPARISON, IntentLabel.GENERAL}
+        if peek_label in _CLEAR_PENDING_FOR:
+            logger.debug(
+                "router: clearing stale pending_intent='therapy' — new intent=%s",
+                peek_label.value if peek_label else "None",
+            )
+            state.pending_intent = None
+            sm.save_state(state)
+            # Skip Phase 7 and fall through to normal classification path below
+            # (clf_result_peek will be reused as clf_result in step 2)
+            clf_result = clf_result_peek
+            goto_step3 = True  # use peeked result, skip re-classify
+
     # Phase 7 — RECOMMENDATION → THERAPY handoff: user is following a CTA to provide patient data
     if (
         not goto_step3
