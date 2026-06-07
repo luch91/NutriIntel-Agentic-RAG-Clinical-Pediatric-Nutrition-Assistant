@@ -104,8 +104,12 @@ class ComparisonWorkflow:
         # Extract compared entities and optional dimension
         entity_a, entity_b, dimension = extract_comparison_entities(user_message)
         if not entity_b:
-            # Fall back to turn_entities if extraction failed
+            # Fallback 1 — current turn_entities (set earlier this turn)
             entities = list(state.turn_entities.compared_entities)
+            # Fallback 2 — prior comparison context persisted in active_task_context
+            if len(entities) < 2:
+                prior = getattr(state.active_task_context, "comparison_entities", None) or []
+                entities = list(prior)
             if len(entities) < 2:
                 raise WorkflowError(
                     "Could not identify two items to compare. "
@@ -119,6 +123,10 @@ class ComparisonWorkflow:
                 f"Comparison entities must be real items, not placeholders "
                 f"(got '{entity_a}' and '{entity_b}')."
             )
+
+        # Persist entities so follow-up turns can reference them without repeating names
+        state.active_task_context.comparison_entities = [entity_a, entity_b]
+        state_manager.save_state(state)
 
         # Context inheritance decision
         inheritance = state_manager.should_inherit_context(
@@ -143,11 +151,11 @@ class ComparisonWorkflow:
                 result_a = self._retrieval.retrieve(query_a)
                 result_b = self._retrieval.retrieve(query_b)
                 passages_a = [
-                    {"source_title": p.source_title, "excerpt": p.text[:300], "entity": entity_a}
+                    {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity_a}
                     for p in result_a.passages
                 ]
                 passages_b = [
-                    {"source_title": p.source_title, "excerpt": p.text[:300], "entity": entity_b}
+                    {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity_b}
                     for p in result_b.passages
                 ]
                 evidence_passages = passages_a + passages_b

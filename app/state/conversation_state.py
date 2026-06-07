@@ -53,6 +53,7 @@ class ActiveTaskContext(BaseModel):
     pending_slots: List[str] = Field(default_factory=list)
     comparison_subtype: Optional[ComparisonSubtype] = None
     therapy_downgrade_status: bool = False
+    comparison_entities: List[str] = Field(default_factory=list)  # persists across follow-up turns
 
 
 class TurnEntities(BaseModel):

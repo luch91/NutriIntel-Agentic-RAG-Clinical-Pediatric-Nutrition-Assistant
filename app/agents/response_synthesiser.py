@@ -292,10 +292,10 @@ class ResponseSynthesiser:
         if not evidence:
             return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
 
-        # Use more context for FCT extraction — cap at 7 passages × 500 chars
+        # Use more context for FCT extraction — cap at 7 passages × 600 chars
         raw_context = "\n\n---\n\n".join(
             f"[Source: {item.get('source_title', 'FCT')}]\n"
-            f"{_truncate(item.get('excerpt', ''), 500)}"
+            f"{_truncate(item.get('excerpt', ''), 600)}"
             for item in evidence[:7]
         )
 
