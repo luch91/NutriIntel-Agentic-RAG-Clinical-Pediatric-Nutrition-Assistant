@@ -11,10 +11,40 @@ wrapper already implemented in app/training/intent_classifier.py.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Dict, Optional
 
 from app.classification.intent_labels import CONFIDENCE_THRESHOLD, IntentLabel
+
+# ---------------------------------------------------------------------------
+# Rule-based comparison pre-check — runs before ML inference
+# These patterns unambiguously signal COMPARISON intent and override the model.
+# ---------------------------------------------------------------------------
+
+_COMPARISON_PATTERNS = [
+    r'\bvs\.?\b',
+    r'\bversus\b',
+    r'\bcompare\b',
+    r'\bcomparison\b',
+    r'\bdifference between\b',
+    r'\bhow does .+ compare\b',
+    r'\bwhich has more\b',
+    r'\bwhich is (?:higher|lower|better|richer)\b',
+    r'\bside[- ]by[- ]side\b',
+    r'\bcontrast\b',
+    r'\b(?:protein|zinc|iron|calcium|vitamin [a-z])\s+content of\b',
+    r'\bnutrients? (?:of|in|for) .+ and \b',
+]
+
+_COMPARISON_RE = re.compile('|'.join(_COMPARISON_PATTERNS), flags=re.IGNORECASE)
+
+
+def _rule_based_intent(query: str) -> Optional[str]:
+    """Return 'comparison' if unambiguous patterns match, else None."""
+    if _COMPARISON_RE.search(query):
+        return "comparison"
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +108,18 @@ class IntentClassifier:
         below CONFIDENCE_THRESHOLD (needs_clarification=True).
         Any inference error returns needs_clarification=True, confidence=0.0.
         """
+        # Rule-based pre-check — overrides ML for unambiguous comparison queries
+        rule_result = _rule_based_intent(text)
+        if rule_result is not None:
+            logger.debug("IntentClassifier: rule-based override '%s...' → %s", text[:60], rule_result)
+            label = self._LABEL_MAP.get(rule_result, IntentLabel.COMPARISON)
+            return ClassificationResult(
+                label=label,
+                confidence=0.97,
+                all_scores={rule_result: 0.97},
+                needs_clarification=False,
+            )
+
         try:
             result = self._clf.predict(text)
             confidence = float(result.confidence)
@@ -153,12 +195,15 @@ class MockIntentClassifier:
         lower = text.lower()
         has_condition = any(kw in lower for kw in self._THERAPY_CONDITIONS)
         has_strong = any(kw in lower for kw in self._THERAPY_STRONG)
+        # Comparison checked before recommendation — a query with "vs" + "nutrition" must
+        # not fall into recommendation just because it contains a recommendation keyword.
+        has_comparison = any(kw in lower for kw in self._COMPARISON_KEYWORDS)
         if has_strong or (has_condition and ("plan" in lower or "my" in lower)):
             label = IntentLabel.THERAPY
+        elif has_comparison:
+            label = IntentLabel.COMPARISON
         elif any(kw in lower for kw in self._RECOMMENDATION_KEYWORDS):
             label = IntentLabel.RECOMMENDATION
-        elif any(kw in lower for kw in self._COMPARISON_KEYWORDS):
-            label = IntentLabel.COMPARISON
         else:
             label = IntentLabel.GENERAL
 

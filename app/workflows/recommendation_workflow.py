@@ -87,9 +87,17 @@ class RecommendationWorkflow:
         if downgraded_from_therapy:
             response_data["therapy_upgrade_note"] = _THERAPY_UPGRADE_NOTE
         else:
-            # Signal that the next user turn should be treated as therapy initiation
-            # if they follow the upgrade CTA.
-            state.pending_intent = "therapy"
+            # Only set pending_intent when a therapy upgrade CTA is explicitly presented
+            # (i.e. no confirmed patient data yet). If the user already has a therapy
+            # session in progress or just asked a comparison/general query, do NOT
+            # set pending_intent — it would hijack the next unrelated turn.
+            has_confirmed_therapy_context = any(
+                getattr(state.confirmed_entities, f) is not None
+                for f in ("age", "sex", "weight", "height", "diagnosis")
+            )
+            if not has_confirmed_therapy_context:
+                state.pending_intent = "therapy"
+                response_data["therapy_upgrade_note"] = _THERAPY_UPGRADE_NOTE
             state_manager.save_state(state)
 
         return WorkflowResult(
