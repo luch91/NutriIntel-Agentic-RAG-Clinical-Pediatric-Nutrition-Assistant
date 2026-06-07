@@ -29,12 +29,17 @@ _COMPARISON_PATTERNS = [
     r'\bcomparison\b',
     r'\bdifference between\b',
     r'\bhow does .+ compare\b',
-    r'\bwhich has more\b',
-    r'\bwhich is (?:higher|lower|better|richer)\b',
+    r'\bwhich (?:\w+ )?has more\b',
+    r'\bwhich (?:\w+ )?is (?:higher|lower|better|richer|worse)\b',
+    r'\bhigher in\b',
+    r'\blower in\b',
+    r'\bmore (?:protein|zinc|iron|calcium|vitamin|fat|carb|energy|fibre|fiber)\b',
     r'\bside[\s\-]by[\s\-]side\b',
     r'\bcontrast\b',
     r'\b(?:protein|zinc|iron|calcium|vitamin\s+[a-z])\s+content\s+of\b',
     r'\bnutrients?\s+(?:of|in|for)\s+.+\s+and\s',
+    r'\bbetter than\b',
+    r'\brank\b',
 ]
 
 _COMPARISON_RE = re.compile('|'.join(_COMPARISON_PATTERNS), flags=re.IGNORECASE)
