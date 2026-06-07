@@ -192,11 +192,19 @@ class MockIntentClassifier:
                 needs_clarification=True,
             )
 
+        # Rule-based pre-check runs first — same patterns as IntentClassifier
+        rule_result = _rule_based_intent(text)
+        if rule_result is not None:
+            label = IntentLabel.COMPARISON
+            scores = {i.value: 0.05 for i in IntentLabel}
+            scores[label.value] = 0.97
+            return ClassificationResult(
+                label=label, confidence=0.97, all_scores=scores, needs_clarification=False,
+            )
+
         lower = text.lower()
         has_condition = any(kw in lower for kw in self._THERAPY_CONDITIONS)
         has_strong = any(kw in lower for kw in self._THERAPY_STRONG)
-        # Comparison checked before recommendation — a query with "vs" + "nutrition" must
-        # not fall into recommendation just because it contains a recommendation keyword.
         has_comparison = any(kw in lower for kw in self._COMPARISON_KEYWORDS)
         if has_strong or (has_condition and ("plan" in lower or "my" in lower)):
             label = IntentLabel.THERAPY
