@@ -31,10 +31,10 @@ _COMPARISON_PATTERNS = [
     r'\bhow does .+ compare\b',
     r'\bwhich has more\b',
     r'\bwhich is (?:higher|lower|better|richer)\b',
-    r'\bside[- ]by[- ]side\b',
+    r'\bside[\s\-]by[\s\-]side\b',
     r'\bcontrast\b',
-    r'\b(?:protein|zinc|iron|calcium|vitamin [a-z])\s+content of\b',
-    r'\bnutrients? (?:of|in|for) .+ and \b',
+    r'\b(?:protein|zinc|iron|calcium|vitamin\s+[a-z])\s+content\s+of\b',
+    r'\bnutrients?\s+(?:of|in|for)\s+.+\s+and\s',
 ]
 
 _COMPARISON_RE = re.compile('|'.join(_COMPARISON_PATTERNS), flags=re.IGNORECASE)
