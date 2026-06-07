@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 _MODEL = "llama-3.1-8b-instant"
 _TEMPERATURE = 0.3
 _MAX_TOKENS = 300
+_MAX_TOKENS_STRUCTURED = 900  # higher budget for JSON extraction
 
 _SAFETY_RULE = (
     "IMPORTANT: Ground every sentence strictly in the provided data. "
@@ -77,8 +78,10 @@ def _truncate(text: str, max_chars: int = 1200) -> str:
     return text[:max_chars] + "…" if len(text) > max_chars else text
 
 
+import json as _json
 import re as _re
 _LABEL_PREFIX = _re.compile(r"^\d+\.\s*")
+_CODE_FENCE = _re.compile(r"^```[a-z]*\n?|\n?```$")
 
 def _clean_part(text: str) -> str:
     """Strip leading numbered labels the model echoes back (e.g. '1. ')."""
@@ -267,6 +270,103 @@ class ResponseSynthesiser:
             "executive_takeaway": takeaway,
             "interpretation": interpretation,
         }
+
+    def synthesise_comparison_structured(
+        self,
+        entity_a: str,
+        entity_b: str,
+        evidence: list,
+        dimension: Optional[str] = None,
+    ) -> dict:
+        """
+        Extracts structured nutrient comparison data from FCT passages.
+
+        Returns a dict with keys:
+          matrix_rows   — list of {nutrient, unit, value_a, value_b} for quantitative
+          points_a      — list of str for entity_a (qualitative fallback)
+          points_b      — list of str for entity_b (qualitative fallback)
+          serving_basis — str
+          data_quality  — "good" | "partial" | "not_found"
+        Falls back to empty lists on any failure so the caller can degrade gracefully.
+        """
+        if not evidence:
+            return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
+
+        # Use more context for FCT extraction — cap at 7 passages × 500 chars
+        raw_context = "\n\n---\n\n".join(
+            f"[Source: {item.get('source_title', 'FCT')}]\n"
+            f"{_truncate(item.get('excerpt', ''), 500)}"
+            for item in evidence[:7]
+        )
+
+        target_nutrients = dimension if dimension else (
+            "energy (kcal), protein (g), fat (g), carbohydrate (g), "
+            "iron (mg), zinc (mg), calcium (mg), vitamin A (µg)"
+        )
+
+        user_prompt = (
+            f"You are a clinical nutrition data extraction assistant.\n\n"
+            f"Below are raw excerpts from Food Composition Tables (FCT). "
+            f"Data may appear in columnar format without headers.\n\n"
+            f"Extract {target_nutrients} for:\n"
+            f"  Food A: {entity_a}\n"
+            f"  Food B: {entity_b}\n\n"
+            f"FCT Data:\n{raw_context}\n\n"
+            f"Return ONLY valid JSON — no markdown, no code fences, no explanation.\n"
+            f"Structure:\n"
+            f'{{"matrix_rows": [{{"nutrient": "Protein", "unit": "g", "value_a": 18.2, "value_b": 25.8}}, ...], '
+            f'"serving_basis": "per 100g", "data_quality": "good"}}\n\n'
+            f"Rules:\n"
+            f"- Include only nutrients found in the source data. Omit nulls entirely.\n"
+            f"- value_a is for {entity_a}, value_b is for {entity_b}.\n"
+            f"- data_quality: 'good' (both found), 'partial' (one found), 'not_found' (neither).\n"
+            f"- If data is absent for a nutrient for one food, omit that row rather than guessing."
+        )
+
+        client = self._get_client()
+        if client is None:
+            return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
+
+        try:
+            response = client.chat.completions.create(  # type: ignore[union-attr]
+                model=_MODEL,
+                temperature=0,
+                max_tokens=_MAX_TOKENS_STRUCTURED,
+                messages=[
+                    {"role": "system", "content": (
+                        "You extract structured nutritional data from Food Composition Table text. "
+                        "Return only valid JSON as instructed. No prose."
+                    )},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            raw = response.choices[0].message.content.strip()
+            # Strip accidental markdown code fences
+            raw = _CODE_FENCE.sub("", raw).strip()
+            parsed = _json.loads(raw)
+            matrix_rows = parsed.get("matrix_rows", [])
+            # Validate row shape — drop malformed entries
+            clean_rows = [
+                r for r in matrix_rows
+                if isinstance(r, dict)
+                and "nutrient" in r
+                and ("value_a" in r or "value_b" in r)
+            ]
+            return {
+                "matrix_rows": clean_rows,
+                "points_a": [],
+                "points_b": [],
+                "serving_basis": parsed.get("serving_basis", "per 100g"),
+                "data_quality": parsed.get("data_quality", "partial" if clean_rows else "not_found"),
+            }
+        except _json.JSONDecodeError as exc:
+            logger.warning("synthesise_comparison_structured: JSON parse failed — %s", exc)
+        except Exception as exc:
+            logger.warning(
+                "synthesise_comparison_structured: error — %s",
+                str(exc).encode("ascii", "replace").decode("ascii"),
+            )
+        return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
 
     def synthesise_general(
         self,

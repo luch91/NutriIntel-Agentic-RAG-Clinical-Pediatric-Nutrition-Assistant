@@ -250,17 +250,31 @@ class DisplayAdapter:
         if comparison_mode not in ("quantitative", "qualitative"):
             comparison_mode = "qualitative"
 
+        # Structured data extraction — populates the comparison table
+        structured = self._synthesiser.synthesise_comparison_structured(
+            entity_a=entity_a,
+            entity_b=entity_b,
+            evidence=data.get("evidence", []),
+            dimension=data.get("dimension"),
+        )
+        matrix_rows = structured.get("matrix_rows", [])
+
+        # If structured extraction found rows, use quantitative mode regardless of
+        # whether the original query contained explicit quantity patterns.
+        if matrix_rows:
+            comparison_mode = "quantitative"
+
         if comparison_mode == "quantitative":
             matrix_or_points = QuantitativeMatrix(
                 headers=[entity_a, entity_b],
-                rows=[],
+                rows=matrix_rows,
             )
         else:
             matrix_or_points = QualitativePoints(
                 entity_a=entity_a,
-                points_a=[],
+                points_a=structured.get("points_a", []),
                 entity_b=entity_b,
-                points_b=[],
+                points_b=structured.get("points_b", []),
             )
 
         # LLM prose synthesis
@@ -281,11 +295,16 @@ class DisplayAdapter:
             "Consult a registered dietitian for context-specific guidance."
         )
 
+        serving_basis = structured.get("serving_basis")
+        context_note = data.get("context_or_assumptions")
+        if serving_basis and not context_note:
+            context_note = f"Values are {serving_basis}."
+
         return ComparisonResponse(
             title=f"{entity_a} vs {entity_b}",
             summary=final_summary,
             entities=[entity_a, entity_b],
-            context_or_assumptions=data.get("context_or_assumptions"),
+            context_or_assumptions=context_note,
             executive_takeaway=final_takeaway,
             comparison_mode=comparison_mode,
             matrix_or_points=matrix_or_points,
