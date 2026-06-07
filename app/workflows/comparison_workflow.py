@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from app.classification.intent_labels import IntentLabel
 from app.state.conversation_state import ConversationState
 from app.state.state_manager import StateManager
@@ -26,68 +26,123 @@ _PLACEHOLDER_RE = re.compile(
 # Simple nutrient quantity pattern — "100g", "400 mg", "2.5 kcal"
 _QUANTITY_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:g|mg|ug|µg|kcal|kj|ml|iu)\b", re.IGNORECASE)
 
+_MAX_COMPARISON_ENTITIES = 5
+
+_ENTITY_SEPARATORS = re.compile(
+    r'\s+vs\.?\s+|\s+versus\s+|\s+and\s+|\s*,\s*|\s+or\s+|\s+to\s+',
+    flags=re.IGNORECASE,
+)
+_TRAILING_CONTEXT = re.compile(
+    r'\s+(?:for|in terms of|regarding|with respect to|in relation to|when it comes to|by|in)\s+.+$',
+    flags=re.IGNORECASE,
+)
+_LEADING_STRIP = re.compile(
+    r'^(?:compare|contrast|show me|what is the difference between|rank|list|which of|how do)\s+',
+    flags=re.IGNORECASE,
+)
+
 
 class WorkflowError(Exception):
     pass
 
 
-def extract_comparison_entities(
-    query: str,
-) -> tuple[str, str, Optional[str]]:
-    """
-    Extracts two food/nutrient entities and an optional comparison dimension.
-
-    Returns:
-        (entity1, entity2, dimension)
-        e.g. ("bambara nut", "groundnut", "zinc content")
-
-    Handles:
-        "compare X vs Y"
-        "X vs Y for Z"
-        "X versus Y in terms of Z"
-        "compare X and Y"
-    """
+def _extract_two_entities_legacy(query: str) -> tuple[str, str, Optional[str]]:
+    """Legacy two-entity extractor — kept for reference."""
     q = query.strip()
     q = re.sub(r"^compare\s+", "", q, flags=re.IGNORECASE).strip()
-
-    parts = re.split(
-        r"\s+vs\.?\s+|\s+versus\s+|\s+and\s+|\s+to\s+",
-        q,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )
-
+    parts = re.split(r"\s+vs\.?\s+|\s+versus\s+|\s+and\s+|\s+to\s+", q, maxsplit=1, flags=re.IGNORECASE)
     if len(parts) != 2:
         return q, "", None
-
     entity1 = parts[0].strip()
     entity2_raw = parts[1].strip()
-
     dimension_match = re.search(
-        r"\s+(?:for|in terms of|regarding|with respect to|"
-        r"in relation to|when it comes to|by)\s+(.+)$",
-        entity2_raw,
-        flags=re.IGNORECASE,
+        r"\s+(?:for|in terms of|regarding|with respect to|in relation to|when it comes to|by)\s+(.+)$",
+        entity2_raw, flags=re.IGNORECASE,
     )
     dimension = dimension_match.group(1).strip() if dimension_match else None
-
     entity2 = re.sub(
-        r"\s+(?:for|in terms of|regarding|with respect to|"
-        r"in relation to|when it comes to|by)\s+.+$",
-        "",
-        entity2_raw,
-        flags=re.IGNORECASE,
+        r"\s+(?:for|in terms of|regarding|with respect to|in relation to|when it comes to|by)\s+.+$",
+        "", entity2_raw, flags=re.IGNORECASE,
     ).strip()
-
     return entity1, entity2, dimension
 
 
+def extract_comparison_entities(query: str) -> Tuple[List[str], Optional[str]]:
+    """
+    Extracts 2–5 food/nutrient entity names and an optional comparison dimension.
+
+    Returns:
+        (entities, dimension)
+
+    Examples:
+        "Compare bambara nut vs groundnut for zinc"
+            → (["bambara nut", "groundnut"], "zinc")
+        "Compare bambara nut, groundnut, and cowpea for protein"
+            → (["bambara nut", "groundnut", "cowpea"], "protein")
+        "Which has more iron: ogi, millet, or sorghum?"
+            → (["ogi", "millet", "sorghum"], "iron")
+    """
+    q = query.strip()
+    q = _LEADING_STRIP.sub('', q).strip()
+
+    # Extract dimension from end of query before splitting
+    dimension_match = re.search(
+        r'\s+(?:for|in terms of|regarding|by)\s+(.+)$', q, flags=re.IGNORECASE,
+    )
+    dimension = dimension_match.group(1).strip() if dimension_match else None
+    if dimension_match:
+        q = q[:dimension_match.start()].strip()
+
+    # Strip trailing question marks and "which of" prefixes
+    q = re.sub(r'^which\s+(?:of\s+)?', '', q, flags=re.IGNORECASE).strip()
+    q = re.sub(r'\?$', '', q).strip()
+
+    raw_parts = _ENTITY_SEPARATORS.split(q)
+
+    entities = []
+    for part in raw_parts:
+        cleaned = part.strip().strip('.,;:')
+
+        # Strip trailing context from last entity when no dimension found yet
+        if not dimension:
+            ctx_match = _TRAILING_CONTEXT.search(cleaned)
+            if ctx_match:
+                dim_raw = ctx_match.group(0).strip()
+                dimension = re.sub(
+                    r'^(?:for|in terms of|regarding|by|in)\s+', '', dim_raw, flags=re.IGNORECASE,
+                ).strip()
+                cleaned = cleaned[:ctx_match.start()].strip()
+
+        if len(cleaned) < 2:
+            continue
+        if cleaned.lower() in ('the', 'a', 'an', 'of', 'me', 'i'):
+            continue
+        entities.append(cleaned.lower())
+
+    # Deduplicate preserving order
+    seen: set = set()
+    unique: List[str] = []
+    for e in entities:
+        if e not in seen:
+            seen.add(e)
+            unique.append(e)
+
+    if len(unique) > _MAX_COMPARISON_ENTITIES:
+        logger.warning("ComparisonWorkflow: truncating %d entities to %d", len(unique), _MAX_COMPARISON_ENTITIES)
+        unique = unique[:_MAX_COMPARISON_ENTITIES]
+
+    if len(unique) < 2:
+        # Last-resort fallback: split on and/vs only
+        fallback = re.split(r'\s+(?:and|vs)\s+', query.lower(), maxsplit=1)
+        unique = [f.strip() for f in fallback if len(f.strip()) > 1]
+
+    return unique, dimension
+
+
 def _extract_compared_entities(user_message: str) -> List[str]:
-    """Thin wrapper kept for backward compat — delegates to extract_comparison_entities."""
-    entity1, entity2, _dimension = extract_comparison_entities(user_message)
-    if entity2:
-        return [entity1, entity2]
-    return []
+    """Thin wrapper for backward compat."""
+    entities, _ = extract_comparison_entities(user_message)
+    return entities
 
 
 class ComparisonWorkflow:
@@ -101,12 +156,13 @@ class ComparisonWorkflow:
         user_message: str,
         state_manager: StateManager,
     ) -> WorkflowResult:
-        # Extract compared entities and optional dimension
-        entity_a, entity_b, dimension = extract_comparison_entities(user_message)
-        if not entity_b:
-            # Fallback 1 — current turn_entities (set earlier this turn)
+        # Extract compared entities (2–5) and optional dimension
+        entities, dimension = extract_comparison_entities(user_message)
+
+        if len(entities) < 2:
+            # Fallback 1 — current turn_entities
             entities = list(state.turn_entities.compared_entities)
-            # Fallback 2 — prior comparison context persisted in active_task_context
+            # Fallback 2 — prior comparison context from active_task_context
             if len(entities) < 2:
                 prior = getattr(state.active_task_context, "comparison_entities", None) or []
                 entities = list(prior)
@@ -115,20 +171,20 @@ class ComparisonWorkflow:
                     "Could not identify two items to compare. "
                     "Please use phrasing like 'X vs Y' or 'compare X with Y'."
                 )
-            entity_a, entity_b = entities[0], entities[1]
             dimension = None
 
-        if _PLACEHOLDER_RE.match(entity_a) or _PLACEHOLDER_RE.match(entity_b):
-            raise WorkflowError(
-                f"Comparison entities must be real items, not placeholders "
-                f"(got '{entity_a}' and '{entity_b}')."
-            )
+        # Reject placeholder entities
+        for e in entities:
+            if _PLACEHOLDER_RE.match(e):
+                raise WorkflowError(
+                    f"Comparison entities must be real items, not placeholders (got '{e}')."
+                )
 
-        # Persist entities so follow-up turns can reference them without repeating names
-        state.active_task_context.comparison_entities = [entity_a, entity_b]
+        # Persist entities so follow-up turns can reference them
+        state.active_task_context.comparison_entities = entities
         state_manager.save_state(state)
 
-        # Context inheritance decision
+        # Context inheritance
         inheritance = state_manager.should_inherit_context(
             state.session_id,
             new_intent=IntentLabel.COMPARISON,
@@ -139,33 +195,31 @@ class ComparisonWorkflow:
             ce = state.confirmed_entities
             patient_context = {f: getattr(ce, f) for f in inheritance.fields_to_inherit}
 
-        # Determine comparison mode
         comparison_mode = "quantitative" if _QUANTITY_RE.search(user_message) else "qualitative"
 
-        # Retrieval — separate queries per entity, enriched with dimension
+        # Retrieval — one query per entity, enriched with dimension
         evidence_passages = []
         if self._retrieval is not None:
             try:
-                query_a = f"{entity_a} {dimension}" if dimension else entity_a
-                query_b = f"{entity_b} {dimension}" if dimension else entity_b
-                result_a = self._retrieval.retrieve(query_a)
-                result_b = self._retrieval.retrieve(query_b)
-                passages_a = [
-                    {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity_a}
-                    for p in result_a.passages
-                ]
-                passages_b = [
-                    {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity_b}
-                    for p in result_b.passages
-                ]
-                evidence_passages = passages_a + passages_b
+                for entity in entities:
+                    query_e = f"{entity} {dimension}" if dimension else entity
+                    result_e = self._retrieval.retrieve(query_e)
+                    evidence_passages += [
+                        {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity}
+                        for p in result_e.passages
+                    ]
             except Exception as exc:
                 logger.warning("ComparisonWorkflow: retrieval failed — %s", exc)
+
+        # entity_a / entity_b kept for downstream display adapter compatibility
+        entity_a = entities[0]
+        entity_b = entities[1] if len(entities) > 1 else ""
 
         response_data: Dict[str, Any] = {
             "query_type": "comparison",
             "entity_a": entity_a,
             "entity_b": entity_b,
+            "entities": entities,
             "dimension": dimension,
             "comparison_mode": comparison_mode,
             "context_inherited": inheritance.inherit,

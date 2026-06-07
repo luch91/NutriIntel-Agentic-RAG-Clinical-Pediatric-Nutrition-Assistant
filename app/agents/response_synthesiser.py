@@ -277,6 +277,7 @@ class ResponseSynthesiser:
         entity_b: str,
         evidence: list,
         dimension: Optional[str] = None,
+        extra_entities: Optional[list] = None,
     ) -> dict:
         """
         Extracts structured nutrient comparison data from FCT passages.
@@ -304,13 +305,19 @@ class ResponseSynthesiser:
             "iron (mg), zinc (mg), calcium (mg), vitamin A (µg)"
         )
 
+        extra_labels = ""
+        if extra_entities:
+            for i, e in enumerate(extra_entities, start=3):
+                extra_labels += f"  Food {chr(64 + i)}: {e}\n"
+
         user_prompt = (
             f"You are a clinical nutrition data extraction assistant.\n\n"
             f"Below are raw excerpts from Food Composition Tables (FCT). "
             f"Data may appear in columnar format without headers.\n\n"
             f"Extract {target_nutrients} for:\n"
             f"  Food A: {entity_a}\n"
-            f"  Food B: {entity_b}\n\n"
+            f"  Food B: {entity_b}\n"
+            f"{extra_labels}\n"
             f"FCT Data:\n{raw_context}\n\n"
             f"Return ONLY valid JSON — no markdown, no code fences, no explanation.\n"
             f"Structure:\n"

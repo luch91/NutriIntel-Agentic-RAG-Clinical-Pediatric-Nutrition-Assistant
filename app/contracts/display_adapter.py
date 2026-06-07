@@ -234,8 +234,12 @@ class DisplayAdapter:
     # -----------------------------------------------------------------------
 
     def _adapt_comparison(self, data: dict) -> ComparisonResponse:
+        # Support multi-entity (2–5) — fall back to entity_a/entity_b for older calls
+        all_entities: List[str] = data.get("entities") or []
         entity_a = data.get("entity_a", "")
         entity_b = data.get("entity_b", "")
+        if not all_entities:
+            all_entities = [e for e in [entity_a, entity_b] if e]
 
         # Rule c — no placeholder entities
         for entity in [entity_a, entity_b]:
@@ -256,6 +260,7 @@ class DisplayAdapter:
             entity_b=entity_b,
             evidence=data.get("evidence", []),
             dimension=data.get("dimension"),
+            extra_entities=all_entities[2:] if len(all_entities) > 2 else None,
         )
         matrix_rows = structured.get("matrix_rows", [])
 
@@ -300,10 +305,12 @@ class DisplayAdapter:
         if serving_basis and not context_note:
             context_note = f"Values are {serving_basis}."
 
+        title = " vs ".join(all_entities) if all_entities else f"{entity_a} vs {entity_b}"
+
         return ComparisonResponse(
-            title=f"{entity_a} vs {entity_b}",
+            title=title,
             summary=final_summary,
-            entities=[entity_a, entity_b],
+            entities=all_entities if all_entities else [entity_a, entity_b],
             context_or_assumptions=context_note,
             executive_takeaway=final_takeaway,
             comparison_mode=comparison_mode,
