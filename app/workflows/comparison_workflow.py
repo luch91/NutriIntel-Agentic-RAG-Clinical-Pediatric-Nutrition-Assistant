@@ -37,7 +37,14 @@ _TRAILING_CONTEXT = re.compile(
     flags=re.IGNORECASE,
 )
 _LEADING_STRIP = re.compile(
-    r'^(?:compare|contrast|show me|what is the difference between|rank|list|which of|how do)\s+',
+    r'^(?:compare|contrast|show me|what is the (?:difference between|nutrient content of)|rank|list|which of|how do)\s+',
+    flags=re.IGNORECASE,
+)
+
+# Colon-style preambles like "which has more zinc: X or Y" or "which food is higher in iron: X or Y"
+# Group 1 captures the embedded dimension (e.g. "zinc", "iron")
+_COLON_PREAMBLE = re.compile(
+    r'^(?:has more|is (?:higher|lower|better|richer|worse))\s+(?:in\s+)?(\w[\w\s]*?)\s*:\s*',
     flags=re.IGNORECASE,
 )
 
@@ -93,8 +100,15 @@ def extract_comparison_entities(query: str) -> Tuple[List[str], Optional[str]]:
     if dimension_match:
         q = q[:dimension_match.start()].strip()
 
-    # Strip trailing question marks and "which of" prefixes
-    q = re.sub(r'^which\s+(?:of\s+)?', '', q, flags=re.IGNORECASE).strip()
+    # Strip trailing question marks, "which of", and "which <phrase>:" preambles.
+    # Handles: "which has more zinc: X or Y" → entities=[X,Y], dimension="zinc"
+    #           "which food is higher in iron: X or Y" → entities=[X,Y], dimension="iron"
+    q = re.sub(r'^which\s+(?:food\s+)?', '', q, flags=re.IGNORECASE).strip()
+    colon_match = _COLON_PREAMBLE.match(q)
+    if colon_match:
+        if dimension is None:
+            dimension = colon_match.group(1).strip()
+        q = q[colon_match.end():].strip()
     q = re.sub(r'\?$', '', q).strip()
 
     raw_parts = _ENTITY_SEPARATORS.split(q)
@@ -102,6 +116,9 @@ def extract_comparison_entities(query: str) -> Tuple[List[str], Optional[str]]:
     entities = []
     for part in raw_parts:
         cleaned = part.strip().strip('.,;:')
+
+        # Strip leading "and" that can survive when splitting "X, Y, and Z" on commas
+        cleaned = re.sub(r'^and\s+', '', cleaned, flags=re.IGNORECASE).strip()
 
         # Strip trailing context from last entity when no dimension found yet
         if not dimension:
