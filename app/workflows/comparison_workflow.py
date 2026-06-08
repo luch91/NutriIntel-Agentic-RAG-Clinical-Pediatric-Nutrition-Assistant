@@ -117,8 +117,8 @@ def extract_comparison_entities(query: str) -> Tuple[List[str], Optional[str]]:
     for part in raw_parts:
         cleaned = part.strip().strip('.,;:')
 
-        # Strip leading "and" that can survive when splitting "X, Y, and Z" on commas
-        cleaned = re.sub(r'^and\s+', '', cleaned, flags=re.IGNORECASE).strip()
+        # Strip leading "and"/"or" that survive when splitting "X, Y, and Z" or "X, Y, or Z" on commas
+        cleaned = re.sub(r'^(?:and|or)\s+', '', cleaned, flags=re.IGNORECASE).strip()
 
         # Strip trailing context from last entity when no dimension found yet
         if not dimension:
