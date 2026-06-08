@@ -14,7 +14,7 @@ NutriIntel handles four query types:
 |---|---|
 | **Therapy** | "Create a nutrition plan for a 10-year-old girl with cystic fibrosis, 28kg, 132cm" |
 | **Recommendation** | "What foods are high in iron for a toddler?" |
-| **Comparison** | "Compare bambara nut vs groundnut for zinc content" |
+| **Comparison** | "Compare bambara nut, groundnut, and cowpea for protein" · "Which has more zinc: ogi or millet?" |
 | **General** | "What is the ketogenic diet?" |
 
 For **therapy queries**, the system collects required clinical slots (age, sex, weight, height, diagnosis, medications, biomarkers, country) through a structured conversation before computing a deterministic nutrition plan — no LLM-generated targets. Nutrient targets trace to DRI tables and evidence-based clinical protocols.
@@ -47,10 +47,12 @@ Intent Classifier (ONNX all-MiniLM-L6-v2 + LogisticRegression, 98.6% F1)
 ```
 
 **Key design properties:**
-- Intent classifier uses **ONNX-exported** `all-MiniLM-L6-v2` — no `torch` or `sentence-transformers` at runtime, compatible with Vercel's 250 MB Lambda limit
-- Phase-aware conversation state (`IDLE → SLOT_FILLING → DISPATCHING → RESPONDING`) prevents bare slot values ("10 year old", "30kg") from being misclassified as new queries
+- Intent classifier: on local/server deployments uses ONNX `all-MiniLM-L6-v2` + LogisticRegression (98.6% F1); on Vercel uses `MockIntentClassifier` with a **rule-based pre-check** (18 regex patterns for comparison queries) — `torch`/`sentence-transformers` are excluded to stay under Vercel's 250 MB Lambda limit
+- Comparison workflow extracts **2–5 entities** from a single query (`extract_comparison_entities()`), handles `vs`, `versus`, commas, "X and Y", colon-style preambles ("which has more zinc: X or Y"), and dimension clauses ("for protein")
+- Phase-aware conversation state (`IDLE → SLOT_FILLING → DISPATCHING → RESPONDING`) prevents bare slot values ("10 year old", "30kg") from being misclassified as new queries; stale `pending_intent` is cleared when a new COMPARISON or GENERAL query arrives
 - Source filter uses `source_title` matching — not `passage_id` — because passage IDs are MD5 hashes
-- On Vercel, startup ingestion is **lazy per-request** (FastAPI `lifespan` does not fire on serverless); Qdrant Cloud is pre-populated and BM25 corpus is pre-serialised
+- On Vercel, startup ingestion is **lazy per-request** (FastAPI `lifespan` does not fire on serverless); Qdrant Cloud is pre-populated and queried via HTTP; BM25 corpus is pre-serialised
+- Comparison responses use a Groq JSON-extraction call (temperature=0) to populate a `QuantitativeMatrix` from FCT passages before prose synthesis
 - Response prose is synthesised by Groq after retrieval; all numeric targets come from the deterministic engine
 - OCR fallback (PyMuPDF + Tesseract) for scanned PDFs where `PyPDFLoader` returns empty pages
 
@@ -89,9 +91,9 @@ Type 1 diabetes · Cystic fibrosis · Food allergy · Preterm nutrition · Chron
 | Backend | Python 3.12, FastAPI, Pydantic v2 |
 | Frontend | Next.js 14 (App Router), TypeScript |
 | Vector store | **Qdrant Cloud** (production) / in-memory (local dev) |
-| Embeddings | `all-MiniLM-L6-v2` via **ONNX Runtime** (no torch required) |
+| Embeddings | `all-MiniLM-L6-v2` via **ONNX Runtime** (local) / `fastembed` (Vercel fallback, no torch) |
 | BM25 | `rank-bm25`, pre-serialised corpus (`bm25_corpus.pkl`) |
-| Intent classifier | ONNX all-MiniLM-L6-v2 + scikit-learn LogisticRegression |
+| Intent classifier | ONNX all-MiniLM-L6-v2 + scikit-learn LogisticRegression (local); rule-based `MockIntentClassifier` (Vercel) |
 | LLM synthesis | **Groq** `llama-3.1-8b-instant` (prose fields only; numeric values never LLM-generated) |
 | PDF extraction | LangChain PyPDFLoader + PyMuPDF/Tesseract OCR fallback |
 | State | Redis (in-memory fallback when unavailable) |
@@ -114,7 +116,7 @@ app/
 ├── engine/           # DeterministicNutrientEngine, DRI lookup, condition adjustments
 ├── models/           # Trained intent classifier artifacts (98.6% F1)
 │   └── intent_classifier/
-│       ├── embedding_model.onnx   # ONNX export of all-MiniLM-L6-v2 (87 MB, Git LFS)
+│       ├── embedding_model.onnx   # ONNX export of all-MiniLM-L6-v2 (87 MB, plain git)
 │       ├── classifier.pkl         # LogisticRegression weights (Git LFS)
 │       └── label_encoder.pkl      # Label encoder (Git LFS)
 ├── observability/    # Structured logger, Prometheus metrics
