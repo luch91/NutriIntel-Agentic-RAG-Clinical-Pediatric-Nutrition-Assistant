@@ -12,9 +12,12 @@ app/common/data/
 # Frontend (separate Vercel project)
 frontend/
 
-# Large model artifacts
+# Large model artifacts — excluded from Lambda bundle (250MB limit)
+# IntentClassifier requires torch (not available on Vercel); MockIntentClassifier
+# with rule-based pre-check is used instead. No model files needed at runtime.
 app/models/intent_classifier/embedding_model/
 app/models/intent_classifier/*.pkl
+app/models/intent_classifier/*.onnx
 
 # Dev artifacts
 .pytest_cache/
@@ -33,9 +36,16 @@ prompts.txt
 CPNA_v1_Claude_Code_Prompt_Pack_v2.md
 CPNA_Development_Log.md
 CPNA_Architecture_Document.md
+CPNA_Fix_ComparisonPermanent.md
+CPNA_Fix_MultiEntityComparison*.md
 qdrant_data/
 dump.rdb
 .env
 .claude/
 .qwen/
 requirements-vercel.txt
+
+# PDF knowledge sources — indexed into Qdrant Cloud at ingest time, not needed at runtime
+*.pdf
+*.epub
+bm25_corpus.pkl
