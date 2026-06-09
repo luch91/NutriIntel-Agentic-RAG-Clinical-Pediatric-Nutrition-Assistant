@@ -40,6 +40,10 @@ _COMPARISON_PATTERNS = [
     r'\bnutrients?\s+(?:of|in|for)\s+.+\s+and\s',
     r'\bbetter than\b',
     r'\brank\b',
+    r'\bbest source of\b',
+    r'\bwhich of\b',
+    r'\bhighest\s+(?:protein|iron|zinc|calcium|vitamin)\b',
+    r'\bnutrients?\s+(?:in|of|for)\s+\w+(?:\s*,\s*\w+)+',
 ]
 
 _COMPARISON_RE = re.compile('|'.join(_COMPARISON_PATTERNS), flags=re.IGNORECASE)
