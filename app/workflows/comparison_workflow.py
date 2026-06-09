@@ -162,6 +162,52 @@ def _extract_compared_entities(user_message: str) -> List[str]:
     return entities
 
 
+_RETRIEVAL_TOTAL_CAP = 16
+_RETRIEVAL_TOP_K_DEFAULT = 4
+
+
+def retrieve_per_entity(
+    entities: List[str],
+    dimension: Optional[str],
+    retriever: Any,
+    top_k_per_entity: int = _RETRIEVAL_TOP_K_DEFAULT,
+) -> Dict[str, Any]:
+    """
+    Fires one retrieval query per entity and returns a dict mapping each
+    entity name to its list of passage dicts (source_title, excerpt, entity).
+
+    Caps total passages at _RETRIEVAL_TOTAL_CAP to stay within synthesis context.
+    Falls back to "{entity} nutritional composition per 100g" when no dimension given.
+    """
+    effective_k = min(top_k_per_entity, _RETRIEVAL_TOTAL_CAP // len(entities))
+    entity_passages: Dict[str, List[Dict[str, str]]] = {}
+
+    for entity in entities:
+        query = (
+            f"{entity} {dimension}"
+            if dimension
+            else f"{entity} nutritional composition per 100g"
+        )
+        try:
+            result = retriever.retrieve(query, top_k=effective_k)
+            entity_passages[entity] = [
+                {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity}
+                for p in result.passages
+            ]
+            logger.debug(
+                "ComparisonWorkflow retrieve_per_entity: '%s' → %d passages",
+                entity, len(entity_passages[entity]),
+            )
+        except Exception as exc:
+            logger.warning(
+                "ComparisonWorkflow retrieve_per_entity: retrieval failed for '%s' — %s",
+                entity, exc,
+            )
+            entity_passages[entity] = []
+
+    return entity_passages
+
+
 class ComparisonWorkflow:
 
     def __init__(self, retrieval_agent: Any = None) -> None:
@@ -214,19 +260,15 @@ class ComparisonWorkflow:
 
         comparison_mode = "quantitative" if _QUANTITY_RE.search(user_message) else "qualitative"
 
-        # Retrieval — one query per entity, enriched with dimension
+        # Per-entity retrieval — capped total to stay within synthesis context
         evidence_passages = []
         if self._retrieval is not None:
-            try:
-                for entity in entities:
-                    query_e = f"{entity} {dimension}" if dimension else entity
-                    result_e = self._retrieval.retrieve(query_e)
-                    evidence_passages += [
-                        {"source_title": p.source_title, "excerpt": p.text[:600], "entity": entity}
-                        for p in result_e.passages
-                    ]
-            except Exception as exc:
-                logger.warning("ComparisonWorkflow: retrieval failed — %s", exc)
+            entity_passages = retrieve_per_entity(
+                entities=entities,
+                dimension=dimension,
+                retriever=self._retrieval,
+            )
+            evidence_passages = [p for ps in entity_passages.values() for p in ps]
 
         # entity_a / entity_b kept for downstream display adapter compatibility
         entity_a = entities[0]
