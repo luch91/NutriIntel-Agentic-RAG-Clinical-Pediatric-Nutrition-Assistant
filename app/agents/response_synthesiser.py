@@ -374,6 +374,8 @@ class ResponseSynthesiser:
             f'{{"matrix_rows": [{example_row}, ...], '
             f'"serving_basis": "per 100g", "data_quality": "good", "key_insight": "..."}}\n\n'
             f"Rules:\n"
+            f"- Each food has its own context block labelled [FOOD NAME IN CAPS]. "
+            f"Only read data for a food from its OWN labelled block — do NOT use another food's numbers as a proxy.\n"
             f"- Include only nutrients found in the source data. Omit rows where no food has data.\n"
             f"{col_rules}\n"
             f"- data_quality: 'good' (all foods found), 'partial' (some found), 'not_found' (none).\n"

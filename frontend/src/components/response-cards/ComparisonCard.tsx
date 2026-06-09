@@ -7,9 +7,16 @@ function isQualitative(m: QuantitativeMatrix | QualitativePoints): m is Qualitat
   return "entity_a" in m;
 }
 
+const ENTITY_COLORS = [
+  { text: "#00FF94", bg: "rgba(0,255,148,0.1)", border: "rgba(0,255,148,0.3)" },
+  { text: "#7C4DFF", bg: "rgba(124,77,255,0.1)", border: "rgba(124,77,255,0.3)" },
+  { text: "#FF6B6B", bg: "rgba(255,107,107,0.1)", border: "rgba(255,107,107,0.3)" },
+  { text: "#FFB347", bg: "rgba(255,179,71,0.1)",  border: "rgba(255,179,71,0.3)"  },
+  { text: "#4FC3F7", bg: "rgba(79,195,247,0.1)",  border: "rgba(79,195,247,0.3)"  },
+];
+
 export function ComparisonCard({ data }: Props) {
-  const entityA = data.entities[0] ?? "";
-  const entityB = data.entities[1] ?? "";
+  const entities = data.entities.length > 0 ? data.entities : ["", ""];
 
   return (
     <div>
@@ -28,22 +35,24 @@ export function ComparisonCard({ data }: Props) {
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        {[entityA, entityB].filter(Boolean).map((e, i) => (
-          <span key={i} style={{
-            background: i === 0 ? "rgba(0,255,148,0.1)" : "rgba(124,77,255,0.1)",
-            color: i === 0 ? "#00FF94" : "#7C4DFF",
-            border: `1px solid ${i === 0 ? "rgba(0,255,148,0.3)" : "rgba(124,77,255,0.3)"}`,
-            borderRadius: "6px", padding: "3px 12px",
-            fontWeight: 700, fontSize: "0.875rem",
-          }}>{e}</span>
-        ))}
+      {/* Entity pills — all N entities */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+        {entities.filter(Boolean).map((e, i) => {
+          const c = ENTITY_COLORS[i % ENTITY_COLORS.length];
+          return (
+            <span key={i} style={{
+              background: c.bg, color: c.text, border: `1px solid ${c.border}`,
+              borderRadius: "6px", padding: "3px 12px",
+              fontWeight: 700, fontSize: "0.875rem",
+            }}>{e}</span>
+          );
+        })}
       </div>
 
       {isQualitative(data.matrix_or_points) ? (
         <QualitativeView points={data.matrix_or_points} />
       ) : (
-        <QuantitativeView matrix={data.matrix_or_points} />
+        <QuantitativeView matrix={data.matrix_or_points} entities={entities} />
       )}
 
       {data.interpretation && (
@@ -94,31 +103,47 @@ function Column({ label, items, color, bg }: { label: string; items: string[]; c
   );
 }
 
-function QuantitativeView({ matrix }: { matrix: QuantitativeMatrix }) {
-  if (matrix.headers.length === 0) return null;
+// Column keys in rows: value_a, value_b, value_c… mapped to entities by index.
+// Row shape from API: { nutrient, unit, value_a, value_b, [value_c, ...] }
+function QuantitativeView({ matrix, entities }: { matrix: QuantitativeMatrix; entities: string[] }) {
+  if (!matrix.rows || matrix.rows.length === 0) return null;
+
+  // Build column key map: index → "value_a", "value_b", etc.
+  const colKeys = entities.map((_, i) => `value_${String.fromCharCode(97 + i)}`);
+
   return (
     <div style={{ overflowX: "auto", marginBottom: "0.75rem" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
         <thead>
           <tr style={{ borderBottom: "1px solid rgba(30,45,74,0.8)" }}>
-            {matrix.headers.map((h, i) => (
-              <th key={i} style={{
-                textAlign: "left", padding: "7px 10px",
-                fontWeight: 700, color: "#00FF94",
-                fontSize: "0.72rem", fontFamily: "var(--font-mono)", letterSpacing: "0.06em",
-              }}>{h}</th>
+            {/* Nutrient + Unit header */}
+            <th style={thStyle("#8B9BB4")}>Nutrient</th>
+            <th style={thStyle("#8B9BB4")}>Unit</th>
+            {/* One column per entity */}
+            {entities.map((e, i) => (
+              <th key={i} style={thStyle(ENTITY_COLORS[i % ENTITY_COLORS.length].text)}>
+                {e}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {matrix.rows.map((row, i) => (
             <tr key={i} style={{ borderBottom: "1px solid rgba(30,45,74,0.4)" }}>
-              {matrix.headers.map((h, j) => (
+              <td style={{ padding: "7px 10px", color: "#E8EDF5", fontWeight: 600 }}>
+                {String(row["nutrient"] ?? "—")}
+              </td>
+              <td style={{ padding: "7px 10px", color: "#4A5878", fontSize: "0.8rem", fontFamily: "var(--font-mono)" }}>
+                {String(row["unit"] ?? "")}
+              </td>
+              {colKeys.map((key, j) => (
                 <td key={j} style={{
-                  padding: "7px 10px", color: j === 0 ? "#E8EDF5" : "#8B9BB4",
-                  fontFamily: typeof row[h] === "number" ? "var(--font-mono)" : undefined,
+                  padding: "7px 10px",
+                  color: "#8B9BB4",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.85rem",
                 }}>
-                  {row[h] !== undefined && row[h] !== null ? String(row[h]) : "—"}
+                  {row[key] !== undefined && row[key] !== null ? String(row[key]) : "—"}
                 </td>
               ))}
             </tr>
@@ -127,6 +152,14 @@ function QuantitativeView({ matrix }: { matrix: QuantitativeMatrix }) {
       </table>
     </div>
   );
+}
+
+function thStyle(color: string): React.CSSProperties {
+  return {
+    textAlign: "left", padding: "7px 10px",
+    fontWeight: 700, color,
+    fontSize: "0.72rem", fontFamily: "var(--font-mono)", letterSpacing: "0.06em",
+  };
 }
 
 function Label({ children }: { children: React.ReactNode }) {

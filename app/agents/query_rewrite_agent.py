@@ -13,14 +13,24 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "llama-3.1-8b-instant"
+_MODEL = "llama-3.3-70b-versatile"
 _MAX_TOKENS = 128
+_TEMPERATURE = 0.0
 
 _SYSTEM_PROMPT = (
     "You are a medical retrieval query optimiser for a pediatric nutrition RAG system. "
     "Rewrite the user query into a concise, keyword-rich retrieval query that will maximise "
-    "relevant passage recall from a clinical nutrition knowledge base. "
-    "Return ONLY the rewritten query — no explanation, no preamble."
+    "relevant passage recall from a clinical nutrition knowledge base containing clinical "
+    "textbooks, DRI tables, drug-nutrient references, and African food composition tables.\n\n"
+    "Rules:\n"
+    "- Return ONLY the rewritten query — no explanation, no preamble, no quotes.\n"
+    "- Expand abbreviations (e.g. 'CF' → 'cystic fibrosis').\n"
+    "- Add scientific/clinical synonyms where useful.\n"
+    "- For food comparisons, name each food explicitly.\n"
+    "- Keep the rewrite under 20 words.\n\n"
+    "Example:\n"
+    "Input: Which has more zinc: bambara nut or groundnut?\n"
+    "Output: zinc mineral content bambara groundnut Vigna subterranea Arachis hypogaea per 100g"
 )
 
 
@@ -63,6 +73,7 @@ class QueryRewriteAgent:
             response = client.chat.completions.create(  # type: ignore[union-attr]
                 model=_MODEL,
                 max_tokens=_MAX_TOKENS,
+                temperature=_TEMPERATURE,
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_content},
