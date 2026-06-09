@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _MODEL = "llama-3.1-8b-instant"
 _TEMPERATURE = 0.3
 _MAX_TOKENS = 300
-_MAX_TOKENS_STRUCTURED = 900  # higher budget for JSON extraction
+_MAX_TOKENS_STRUCTURED = 2048  # full 30-row nutrient table with up to 5 entity columns
 
 _SAFETY_RULE = (
     "IMPORTANT: Ground every sentence strictly in the provided data. "
@@ -82,6 +82,59 @@ import json as _json
 import re as _re
 _LABEL_PREFIX = _re.compile(r"^\d+\.\s*")
 _CODE_FENCE = _re.compile(r"^```[a-z]*\n?|\n?```$")
+
+# ---------------------------------------------------------------------------
+# Full nutrient definitions — display name → FCT aliases + unit
+# Used by synthesise_comparison_structured to always emit all rows.
+# ---------------------------------------------------------------------------
+NUTRIENT_DEFINITIONS: List[dict] = [
+    {"display": "Energy",         "unit": "kcal", "aliases": ["ENERC_KCAL", "ENERGY_KC", "ENERC", "Kcal", "kcal", "kJ"]},
+    {"display": "Water",          "unit": "g",    "aliases": ["WATER", "H2O"]},
+    {"display": "Protein",        "unit": "g",    "aliases": ["PROCNT", "PROTEIN", "A_PROTEI", "PROTCNT"]},
+    {"display": "Fat",            "unit": "g",    "aliases": ["FAT", "FATCE"]},
+    {"display": "Carbohydrate",   "unit": "g",    "aliases": ["CHOCDF", "CHO", "CHOAVLDF", "CHO AVAIL"]},
+    {"display": "Fibre",          "unit": "g",    "aliases": ["FIBTG", "FIBRE", "FIB", "FIBRE. TOTAL DIETARY", "FIBRE TOTAL"]},
+    {"display": "Ash",            "unit": "g",    "aliases": ["ASH"]},
+    {"display": "Calcium",        "unit": "mg",   "aliases": ["CA", "Ca", "CALCIUM"]},
+    {"display": "Iron",           "unit": "mg",   "aliases": ["FE", "Fe", "IRON"]},
+    {"display": "Magnesium",      "unit": "mg",   "aliases": ["MG", "Mg", "MAGNESIUM"]},
+    {"display": "Phosphorus",     "unit": "mg",   "aliases": ["P", "PHOSPHORUS", "PHOS"]},
+    {"display": "Potassium",      "unit": "mg",   "aliases": ["K", "POTASSIUM"]},
+    {"display": "Sodium",         "unit": "mg",   "aliases": ["NA", "Na", "SODIUM"]},
+    {"display": "Zinc",           "unit": "mg",   "aliases": ["ZN", "Zn", "ZINC"]},
+    {"display": "Copper",         "unit": "mg",   "aliases": ["CU", "Cu", "COPPER"]},
+    {"display": "Vit A RE",       "unit": "µg",   "aliases": ["VITA_RE", "VITA", "VIT_A_RE", "VITA(RE)"]},
+    {"display": "Vit A RAE",      "unit": "µg",   "aliases": ["VITA_RAE", "RAE"]},
+    {"display": "Retinol",        "unit": "µg",   "aliases": ["RETOL", "RETINOL"]},
+    {"display": "Beta-carotene",  "unit": "µg",   "aliases": ["CARTB", "BCAROT"]},
+    {"display": "Vit D",          "unit": "µg",   "aliases": ["VITD", "VIT_D"]},
+    {"display": "Vit E",          "unit": "mg",   "aliases": ["VITE", "TOCPHA"]},
+    {"display": "Thiamine",       "unit": "mg",   "aliases": ["THIA", "THIAMINE", "VIT_B1"]},
+    {"display": "Riboflavin",     "unit": "mg",   "aliases": ["RIBF", "RIBOFLAVIN", "VIT_B2"]},
+    {"display": "Niacin equiv",   "unit": "mg",   "aliases": ["NE", "NIACIN_EQUIV"]},
+    {"display": "Niacin",         "unit": "mg",   "aliases": ["NIA", "NIACIN"]},
+    {"display": "Tryptophan",     "unit": "mg",   "aliases": ["TRP", "TRYPTOPHAN"]},
+    {"display": "Vit B6",         "unit": "mg",   "aliases": ["VITB6A", "VIT_B6"]},
+    {"display": "Folate",         "unit": "µg",   "aliases": ["FOL", "FOLATE"]},
+    {"display": "Folate equiv",   "unit": "µg",   "aliases": ["FOLAC", "DFE"]},
+    {"display": "Vit B12",        "unit": "µg",   "aliases": ["VITB12", "VIT_B12"]},
+    {"display": "Vit C",          "unit": "mg",   "aliases": ["VITC", "VIT_C", "ASCORBIC"]},
+]
+
+# Map a user-supplied dimension string to the matching subset of NUTRIENT_DEFINITIONS.
+# If None/empty → return all definitions.
+def _resolve_nutrient_targets(dimension: Optional[str]) -> List[dict]:
+    if not dimension:
+        return NUTRIENT_DEFINITIONS
+    dim_lower = dimension.lower()
+    matched = []
+    for nd in NUTRIENT_DEFINITIONS:
+        if dim_lower in nd["display"].lower():
+            matched.append(nd)
+            continue
+        if any(dim_lower in a.lower() for a in nd["aliases"]):
+            matched.append(nd)
+    return matched if matched else NUTRIENT_DEFINITIONS
 
 def _clean_part(text: str) -> str:
     """Strip leading numbered labels the model echoes back (e.g. '1. ')."""
@@ -299,6 +352,10 @@ class ResponseSynthesiser:
         """
         Extracts structured nutrient comparison data from FCT passages for 2–5 entities.
 
+        Always emits one row per nutrient in the target list (NUTRIENT_DEFINITIONS or the
+        dimension-filtered subset). Missing values are represented as "—" rather than being
+        omitted, so the table always has the full shape.
+
         Returns a dict with keys:
           matrix_rows   — list of {nutrient, unit, value_a, value_b[, value_c, ...]}
                           column keys match entity order: value_a=entities[0], value_b=entities[1], etc.
@@ -319,8 +376,10 @@ class ResponseSynthesiser:
         if not evidence:
             return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
 
+        # Determine the nutrient target list
+        nutrient_targets = _resolve_nutrient_targets(dimension)
+
         # Build context blocks — one per entity using passages tagged with 'entity' field
-        # (per-entity retrieval tags each passage). Fall back to a shared pool if not tagged.
         tagged = any(item.get("entity") for item in evidence)
         if tagged:
             raw_context_parts = []
@@ -335,52 +394,61 @@ class ResponseSynthesiser:
                 raw_context_parts.append(f"[{entity.upper()}]\n{block}")
             raw_context = "\n\n---\n\n".join(raw_context_parts)
         else:
-            # Shared pool fallback (legacy path)
             raw_context = "\n\n---\n\n".join(
                 f"[Source: {item.get('source_title', 'FCT')}]\n"
                 f"{_truncate(item.get('excerpt', ''), 600)}"
                 for item in evidence[:7]
             )
 
-        target_nutrients = dimension if dimension else (
-            "energy (kcal), protein (g), fat (g), carbohydrate (g), "
-            "iron (mg), zinc (mg), calcium (mg), vitamin A (µg)"
-        )
-
-        # Build dynamic entity label lines and column key map
-        col_keys = [f"value_{chr(97 + i)}" for i in range(len(entities))]  # value_a, value_b, value_c …
+        # Build column key map
+        col_keys = [f"value_{chr(97 + i)}" for i in range(len(entities))]
         entity_lines = "\n".join(
             f"  Food {chr(65 + i)} ({col_keys[i]}): {entity}"
             for i, entity in enumerate(entities)
         )
-
-        example_row = _json.dumps(
-            {"nutrient": "Protein", "unit": "g", **{k: 0.0 for k in col_keys}}
-        )
-
         col_rules = "\n".join(
-            f"- {col_keys[i]} is for {entities[i]}"
+            f"- {col_keys[i]} is ONLY for {entities[i]} — never copy another food's number here"
             for i in range(len(entities))
         )
 
+        # Build the nutrient extraction target list with all aliases
+        nutrient_lines = "\n".join(
+            f'  {nd["display"]} ({nd["unit"]}): look for any of {", ".join(nd["aliases"])}'
+            for nd in nutrient_targets
+        )
+
+        example_row = _json.dumps(
+            {"nutrient": "Protein", "unit": "g", **{k: "—" for k in col_keys}}
+        )
+
+        # Full required rows list for the "always emit" rule
+        required_rows = ", ".join(f'"{nd["display"]}"' for nd in nutrient_targets)
+
+        # Increase token budget for full 30-row tables
+        max_tokens = max(_MAX_TOKENS_STRUCTURED, 200 + len(nutrient_targets) * 60)
+
         user_prompt = (
             f"You are a clinical nutrition data extraction assistant.\n\n"
-            f"Below are raw excerpts from Food Composition Tables (FCT). "
-            f"Data may appear in columnar format without headers.\n\n"
-            f"Extract {target_nutrients} for:\n{entity_lines}\n\n"
+            f"Below are raw excerpts from Food Composition Tables (West African FCT / Kenyan FCT). "
+            f"Each food's data is in its own labelled block. "
+            f"Data may appear in columnar format — numbers follow fixed column positions defined by "
+            f"the column header row at the top of each table section (e.g. EDIBLE ENERC WATER PROTCNT FAT CHOAVLDF FIBTG ASH ...).\n\n"
+            f"Foods to extract:\n{entity_lines}\n\n"
+            f"Nutrients to extract (search ALL listed aliases for each nutrient):\n{nutrient_lines}\n\n"
             f"FCT Data:\n{raw_context}\n\n"
             f"Return ONLY valid JSON — no markdown, no code fences, no explanation.\n"
             f"Structure:\n"
             f'{{"matrix_rows": [{example_row}, ...], '
-            f'"serving_basis": "per 100g", "data_quality": "good", "key_insight": "..."}}\n\n'
-            f"Rules:\n"
-            f"- Each food has its own context block labelled [FOOD NAME IN CAPS]. "
-            f"Only read data for a food from its OWN labelled block — do NOT use another food's numbers as a proxy.\n"
-            f"- Include only nutrients found in the source data. Omit rows where no food has data.\n"
+            f'"serving_basis": "per 100g", "data_quality": "good|partial|not_found", "key_insight": "..."}}\n\n'
+            f"STRICT RULES:\n"
+            f"1. Each food has its own context block labelled [FOOD NAME IN CAPS]. "
+            f"ONLY read data for a food from its OWN labelled block.\n"
             f"{col_rules}\n"
-            f"- data_quality: 'good' (all foods found), 'partial' (some found), 'not_found' (none).\n"
-            f"- key_insight: one sentence on the most clinically relevant finding, or null.\n"
-            f"- Omit a column key entirely from a row if that food has no data for that nutrient."
+            f"2. ALWAYS emit one row for EVERY nutrient in this list: {required_rows}. "
+            f"If a value is not found, use the string \"—\" (not null, not 0, not omit).\n"
+            f"3. data_quality: 'good' = all foods have at least macronutrients; "
+            f"'partial' = some foods found; 'not_found' = no food data found.\n"
+            f"4. key_insight: one sentence on the most clinically relevant finding, or null."
         )
 
         client = self._get_client()
@@ -391,11 +459,12 @@ class ResponseSynthesiser:
             response = client.chat.completions.create(  # type: ignore[union-attr]
                 model=_MODEL,
                 temperature=0,
-                max_tokens=_MAX_TOKENS_STRUCTURED,
+                max_tokens=max_tokens,
                 messages=[
                     {"role": "system", "content": (
                         "You extract structured nutritional data from Food Composition Table text. "
-                        "Return only valid JSON as instructed. No prose."
+                        "Return only valid JSON as instructed. No prose. "
+                        "Always emit a row for every requested nutrient; use \"—\" for missing values."
                     )},
                     {"role": "user", "content": user_prompt},
                 ],
@@ -404,19 +473,32 @@ class ResponseSynthesiser:
             raw = _CODE_FENCE.sub("", raw).strip()
             parsed = _json.loads(raw)
             matrix_rows = parsed.get("matrix_rows", [])
-            # Validate row shape — must have nutrient + at least one value column
-            clean_rows = [
-                r for r in matrix_rows
-                if isinstance(r, dict)
-                and "nutrient" in r
-                and any(k in r for k in col_keys)
-            ]
+
+            # Validate row shape — must have nutrient field
+            llm_rows = {
+                r["nutrient"]: r for r in matrix_rows
+                if isinstance(r, dict) and "nutrient" in r
+            }
+
+            # Merge LLM output with full nutrient list — always emit every row
+            clean_rows = []
+            for nd in nutrient_targets:
+                row = llm_rows.get(nd["display"], {})
+                merged: dict = {"nutrient": nd["display"], "unit": nd["unit"]}
+                for k in col_keys:
+                    val = row.get(k)
+                    merged[k] = str(val) if val is not None and val != "" else "—"
+                clean_rows.append(merged)
+
+            any_real = any(
+                row.get(col_keys[0], "—") != "—" for row in clean_rows
+            )
             return {
                 "matrix_rows": clean_rows,
                 "points_a": [],
                 "points_b": [],
                 "serving_basis": parsed.get("serving_basis", "per 100g"),
-                "data_quality": parsed.get("data_quality", "partial" if clean_rows else "not_found"),
+                "data_quality": parsed.get("data_quality", "partial" if any_real else "not_found"),
                 "key_insight": parsed.get("key_insight"),
             }
         except _json.JSONDecodeError as exc:
