@@ -439,14 +439,29 @@ class ResponseSynthesiser:
         # Increase token budget for full 30-row tables
         max_tokens = max(_MAX_TOKENS_STRUCTURED, 200 + len(nutrient_targets) * 60)
 
+        # West African FCT 2019 — exact column order for each sub-table.
+        # Numbers in data rows appear in this fixed positional order (after food name).
+        # Col 0 = edible portion fraction (often 1.00, skip)
+        _WAFCT_COLUMNS = (
+            "West African FCT 2019 column schemas (numbers appear in this exact order after the food name):\n"
+            "  Macronutrient table:  EDIBLE | ENERC_kJ | ENERC_kcal | WATER | PROTCNT | FAT | CHOAVLDF | FIBTG | ASH\n"
+            "    e.g. '03_001 Bambara groundnut, dry, raw  1.00  1350(323)  9.0  19.5  5.9  33.6  28.9  3.1'\n"
+            "    → ENERC=323 kcal, WATER=9.0g, PROTEIN=19.5g, FAT=5.9g, CHO=33.6g, FIBRE=28.9g, ASH=3.1g\n"
+            "  Mineral table:  CA | FE | MG | P | K | NA | ZN | CU | VITA | VITA_RAE | RETOL | CARTBEQ\n"
+            "    e.g. '03_001  53  3.2  174  267  1160  2  2.40  0.76  tr  tr  0  tr'\n"
+            "    → CA=53mg, FE=3.2mg, MG=174mg, P=267mg, K=1160mg, NA=2mg, ZN=2.40mg, CU=0.76mg\n"
+            "  Vitamin table:  VITD | VITE | THIA | RIBF | NIAEQ | NIA | TRP | VITB6 | FOL | FOLDFE | VITB12 | VITC\n"
+            "  Note: 'tr' means trace (effectively 0), '[x]' means estimated value x, 'oa' means data from outside Africa.\n"
+            "  ENERC appears as 'kJ(kcal)' e.g. '1350(323)' — use the kcal value in parentheses.\n"
+        )
+
         user_prompt = (
             f"You are a clinical nutrition data extraction assistant.\n\n"
-            f"Below are raw excerpts from Food Composition Tables (West African FCT / Kenyan FCT). "
-            f"Each food's data is in its own labelled block. "
-            f"Data may appear in columnar format — numbers follow fixed column positions defined by "
-            f"the column header row at the top of each table section (e.g. EDIBLE ENERC WATER PROTCNT FAT CHOAVLDF FIBTG ASH ...).\n\n"
+            f"Below are raw excerpts from Food Composition Tables (West African FCT 2019 / Kenyan FCT 2018). "
+            f"Each food's data is in its own labelled block.\n\n"
+            f"{_WAFCT_COLUMNS}\n"
             f"Foods to extract:\n{entity_lines}\n\n"
-            f"Nutrients to extract (search ALL listed aliases for each nutrient):\n{nutrient_lines}\n\n"
+            f"Nutrients to extract (also accept any of the listed aliases):\n{nutrient_lines}\n\n"
             f"FCT Data:\n{raw_context}\n\n"
             f"Return ONLY valid JSON — no markdown, no code fences, no explanation.\n"
             f"Structure:\n"
@@ -456,11 +471,12 @@ class ResponseSynthesiser:
             f"1. Each food has its own context block labelled [FOOD NAME IN CAPS]. "
             f"ONLY read data for a food from its OWN labelled block.\n"
             f"{col_rules}\n"
-            f"2. ALWAYS emit one row for EVERY nutrient in this list: {required_rows}. "
+            f"2. Use the column schemas above to map positional numbers to nutrient names when headers are absent.\n"
+            f"3. ALWAYS emit one row for EVERY nutrient in this list: {required_rows}. "
             f"If a value is not found, use the string \"—\" (not null, not 0, not omit).\n"
-            f"3. data_quality: 'good' = all foods have at least macronutrients; "
+            f"4. data_quality: 'good' = all foods have at least macronutrients; "
             f"'partial' = some foods found; 'not_found' = no food data found.\n"
-            f"4. key_insight: one sentence on the most clinically relevant finding, or null."
+            f"5. key_insight: one sentence on the most clinically relevant finding, or null."
         )
 
         client = self._get_client()

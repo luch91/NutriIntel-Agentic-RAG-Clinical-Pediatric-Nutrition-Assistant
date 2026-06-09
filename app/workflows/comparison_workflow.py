@@ -230,11 +230,11 @@ def retrieve_per_entity(
     entity_passages: Dict[str, List[Dict[str, str]]] = {}
 
     for entity in entities:
-        query = (
-            f"{entity} {dimension}"
-            if dimension
-            else f"{entity} nutritional composition per 100g"
-        )
+        if dimension:
+            query = f"{entity} {dimension} per 100g raw dry"
+        else:
+            # "dry raw" anchors retrieval to standalone FCT entries, not mixed dishes
+            query = f"{entity} dry raw nutritional composition per 100g energy protein fat carbohydrate"
         try:
             result = retriever.retrieve(query, top_k=effective_k)
             entity_passages[entity] = [
