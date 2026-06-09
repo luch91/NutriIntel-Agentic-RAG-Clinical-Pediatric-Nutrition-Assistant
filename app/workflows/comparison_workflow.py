@@ -15,6 +15,7 @@ from app.classification.intent_labels import IntentLabel
 from app.state.conversation_state import ConversationState
 from app.state.state_manager import StateManager
 from app.workflows.therapy_workflow import WorkflowResult
+from app.agents.response_synthesiser import NUTRIENT_DEFINITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,14 @@ _PLACEHOLDER_RE = re.compile(
 _QUANTITY_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:g|mg|ug|µg|kcal|kj|ml|iu)\b", re.IGNORECASE)
 
 _MAX_COMPARISON_ENTITIES = 5
+
+# Flat set of all nutrient display names and their aliases (lowercase) for fast lookup.
+# Used to detect when a parsed "entity" is actually a nutrient dimension, not a food.
+_NUTRIENT_LOOKUP: set = set()
+for _nd in NUTRIENT_DEFINITIONS:
+    _NUTRIENT_LOOKUP.add(_nd["display"].lower())
+    for _alias in _nd["aliases"]:
+        _NUTRIENT_LOOKUP.add(_alias.lower())
 
 _ENTITY_SEPARATORS = re.compile(
     r'\s+vs\.?\s+|\s+versus\s+|\s+and\s+|\s*,\s*|\s+or\s+|\s+to\s+',
@@ -111,6 +120,21 @@ def extract_comparison_entities(query: str) -> Tuple[List[str], Optional[str]]:
         q = q[colon_match.end():].strip()
     q = re.sub(r'\?$', '', q).strip()
 
+    # Extract leading nutrient names before "in <foods>" pattern.
+    # Handles: "zinc and iron in bambara nut vs groundnut"
+    #           "zinc, iron, calcium in bambara nut and cowpea"
+    # Pattern: one or more known-nutrient tokens separated by and/comma, then "in <foods>"
+    _leading_nutrient_in = re.compile(
+        r'^((?:(?:' + '|'.join(re.escape(n) for n in sorted(_NUTRIENT_LOOKUP, key=len, reverse=True))
+        + r')(?:\s*(?:,|and|or)\s*)?)+'
+        + r')\s+in\s+', flags=re.IGNORECASE,
+    )
+    lead_match = _leading_nutrient_in.match(q)
+    if lead_match:
+        if dimension is None:
+            dimension = lead_match.group(1).strip().rstrip(',').strip()
+        q = q[lead_match.end():].strip()
+
     raw_parts = _ENTITY_SEPARATORS.split(q)
 
     entities = []
@@ -135,6 +159,29 @@ def extract_comparison_entities(query: str) -> Tuple[List[str], Optional[str]]:
         if cleaned.lower() in ('the', 'a', 'an', 'of', 'me', 'i'):
             continue
         entities.append(cleaned.lower())
+
+    # Separate food entities from nutrient names.
+    # Queries like "compare zinc and iron in bambara nut vs groundnut" may leave
+    # "zinc" and "iron" in the entity list after splitting on "and".
+    food_entities: List[str] = []
+    nutrient_entities: List[str] = []
+    for e in entities:
+        if e.lower() in _NUTRIENT_LOOKUP:
+            nutrient_entities.append(e)
+        else:
+            food_entities.append(e)
+
+    # Fold detected nutrient names into dimension (join with " and " if multiple)
+    if nutrient_entities:
+        nutrient_dim = " and ".join(nutrient_entities)
+        if dimension:
+            # Only override if what we found is more specific
+            dimension = nutrient_dim
+        else:
+            dimension = nutrient_dim
+        entities = food_entities
+    else:
+        entities = food_entities or entities
 
     # Deduplicate preserving order
     seen: set = set()

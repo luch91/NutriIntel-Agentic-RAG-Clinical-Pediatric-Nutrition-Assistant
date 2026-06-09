@@ -122,18 +122,30 @@ NUTRIENT_DEFINITIONS: List[dict] = [
 ]
 
 # Map a user-supplied dimension string to the matching subset of NUTRIENT_DEFINITIONS.
-# If None/empty → return all definitions.
+# Accepts a single term ("zinc") or a comma/and-separated list ("zinc and iron" / "zinc, iron").
+# If None/empty or no matches → return all definitions.
 def _resolve_nutrient_targets(dimension: Optional[str]) -> List[dict]:
     if not dimension:
         return NUTRIENT_DEFINITIONS
-    dim_lower = dimension.lower()
+    # Split on "and", "or", commas so "zinc and iron" → ["zinc", "iron"]
+    import re as _re2
+    terms = [t.strip() for t in _re2.split(r'[,\s]+(?:and|or)[,\s]+|,', dimension, flags=_re2.IGNORECASE) if t.strip()]
+    if not terms:
+        terms = [dimension.strip()]
     matched = []
-    for nd in NUTRIENT_DEFINITIONS:
-        if dim_lower in nd["display"].lower():
-            matched.append(nd)
-            continue
-        if any(dim_lower in a.lower() for a in nd["aliases"]):
-            matched.append(nd)
+    seen = set()
+    for term in terms:
+        term_lower = term.lower()
+        for nd in NUTRIENT_DEFINITIONS:
+            if nd["display"] in seen:
+                continue
+            if term_lower in nd["display"].lower():
+                matched.append(nd)
+                seen.add(nd["display"])
+                continue
+            if any(term_lower in a.lower() for a in nd["aliases"]):
+                matched.append(nd)
+                seen.add(nd["display"])
     return matched if matched else NUTRIENT_DEFINITIONS
 
 def _clean_part(text: str) -> str:
