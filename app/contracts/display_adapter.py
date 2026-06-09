@@ -254,13 +254,11 @@ class DisplayAdapter:
         if comparison_mode not in ("quantitative", "qualitative"):
             comparison_mode = "qualitative"
 
-        # Structured data extraction — populates the comparison table
+        # Structured data extraction — populates the comparison table (N entities)
         structured = self._synthesiser.synthesise_comparison_structured(
-            entity_a=entity_a,
-            entity_b=entity_b,
+            entities=all_entities,
             evidence=data.get("evidence", []),
             dimension=data.get("dimension"),
-            extra_entities=all_entities[2:] if len(all_entities) > 2 else None,
         )
         matrix_rows = structured.get("matrix_rows", [])
 
@@ -271,7 +269,7 @@ class DisplayAdapter:
 
         if comparison_mode == "quantitative":
             matrix_or_points = QuantitativeMatrix(
-                headers=[entity_a, entity_b],
+                headers=all_entities,
                 rows=matrix_rows,
             )
         else:
@@ -301,9 +299,15 @@ class DisplayAdapter:
         )
 
         serving_basis = structured.get("serving_basis")
+        key_insight = structured.get("key_insight")
         context_note = data.get("context_or_assumptions")
-        if serving_basis and not context_note:
-            context_note = f"Values are {serving_basis}."
+        if not context_note:
+            if serving_basis and key_insight:
+                context_note = f"Values are {serving_basis}. {key_insight}"
+            elif serving_basis:
+                context_note = f"Values are {serving_basis}."
+            elif key_insight:
+                context_note = key_insight
 
         title = " vs ".join(all_entities) if all_entities else f"{entity_a} vs {entity_b}"
 

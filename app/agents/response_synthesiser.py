@@ -271,7 +271,7 @@ class ResponseSynthesiser:
             "interpretation": interpretation,
         }
 
-    def synthesise_comparison_structured(
+    def _synthesise_comparison_structured_legacy(
         self,
         entity_a: str,
         entity_b: str,
@@ -279,55 +279,106 @@ class ResponseSynthesiser:
         dimension: Optional[str] = None,
         extra_entities: Optional[list] = None,
     ) -> dict:
+        """Legacy two-entity extractor — kept for reference."""
+        return self.synthesise_comparison_structured(
+            entities=[entity_a, entity_b] + (extra_entities or []),
+            evidence=evidence,
+            dimension=dimension,
+        )
+
+    def synthesise_comparison_structured(
+        self,
+        entities: Optional[List[str]] = None,
+        evidence: Optional[list] = None,
+        dimension: Optional[str] = None,
+        # Legacy keyword args kept for callers that pass entity_a/entity_b directly
+        entity_a: Optional[str] = None,
+        entity_b: Optional[str] = None,
+        extra_entities: Optional[list] = None,
+    ) -> dict:
         """
-        Extracts structured nutrient comparison data from FCT passages.
+        Extracts structured nutrient comparison data from FCT passages for 2–5 entities.
 
         Returns a dict with keys:
-          matrix_rows   — list of {nutrient, unit, value_a, value_b} for quantitative
-          points_a      — list of str for entity_a (qualitative fallback)
-          points_b      — list of str for entity_b (qualitative fallback)
+          matrix_rows   — list of {nutrient, unit, value_a, value_b[, value_c, ...]}
+                          column keys match entity order: value_a=entities[0], value_b=entities[1], etc.
+          points_a      — list of str (qualitative fallback, entity[0])
+          points_b      — list of str (qualitative fallback, entity[1])
           serving_basis — str
           data_quality  — "good" | "partial" | "not_found"
+          key_insight   — str | None
         Falls back to empty lists on any failure so the caller can degrade gracefully.
         """
+        # Resolve entities — support both new (entities=[...]) and legacy (entity_a/entity_b) call styles
+        if entities is None:
+            entities = [e for e in [entity_a, entity_b] + (extra_entities or []) if e]
+        if not entities or len(entities) < 2:
+            return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
+        if evidence is None:
+            evidence = []
         if not evidence:
             return {"matrix_rows": [], "points_a": [], "points_b": [], "data_quality": "not_found"}
 
-        # Use more context for FCT extraction — cap at 7 passages × 600 chars
-        raw_context = "\n\n---\n\n".join(
-            f"[Source: {item.get('source_title', 'FCT')}]\n"
-            f"{_truncate(item.get('excerpt', ''), 600)}"
-            for item in evidence[:7]
-        )
+        # Build context blocks — one per entity using passages tagged with 'entity' field
+        # (per-entity retrieval tags each passage). Fall back to a shared pool if not tagged.
+        tagged = any(item.get("entity") for item in evidence)
+        if tagged:
+            raw_context_parts = []
+            for entity in entities:
+                entity_items = [e for e in evidence if e.get("entity") == entity]
+                if not entity_items:
+                    raw_context_parts.append(f"[{entity.upper()}]\nNo passages retrieved.")
+                    continue
+                block = "\n".join(
+                    _truncate(item.get("excerpt", ""), 600) for item in entity_items[:4]
+                )
+                raw_context_parts.append(f"[{entity.upper()}]\n{block}")
+            raw_context = "\n\n---\n\n".join(raw_context_parts)
+        else:
+            # Shared pool fallback (legacy path)
+            raw_context = "\n\n---\n\n".join(
+                f"[Source: {item.get('source_title', 'FCT')}]\n"
+                f"{_truncate(item.get('excerpt', ''), 600)}"
+                for item in evidence[:7]
+            )
 
         target_nutrients = dimension if dimension else (
             "energy (kcal), protein (g), fat (g), carbohydrate (g), "
             "iron (mg), zinc (mg), calcium (mg), vitamin A (µg)"
         )
 
-        extra_labels = ""
-        if extra_entities:
-            for i, e in enumerate(extra_entities, start=3):
-                extra_labels += f"  Food {chr(64 + i)}: {e}\n"
+        # Build dynamic entity label lines and column key map
+        col_keys = [f"value_{chr(97 + i)}" for i in range(len(entities))]  # value_a, value_b, value_c …
+        entity_lines = "\n".join(
+            f"  Food {chr(65 + i)} ({col_keys[i]}): {entity}"
+            for i, entity in enumerate(entities)
+        )
+
+        example_row = _json.dumps(
+            {"nutrient": "Protein", "unit": "g", **{k: 0.0 for k in col_keys}}
+        )
+
+        col_rules = "\n".join(
+            f"- {col_keys[i]} is for {entities[i]}"
+            for i in range(len(entities))
+        )
 
         user_prompt = (
             f"You are a clinical nutrition data extraction assistant.\n\n"
             f"Below are raw excerpts from Food Composition Tables (FCT). "
             f"Data may appear in columnar format without headers.\n\n"
-            f"Extract {target_nutrients} for:\n"
-            f"  Food A: {entity_a}\n"
-            f"  Food B: {entity_b}\n"
-            f"{extra_labels}\n"
+            f"Extract {target_nutrients} for:\n{entity_lines}\n\n"
             f"FCT Data:\n{raw_context}\n\n"
             f"Return ONLY valid JSON — no markdown, no code fences, no explanation.\n"
             f"Structure:\n"
-            f'{{"matrix_rows": [{{"nutrient": "Protein", "unit": "g", "value_a": 18.2, "value_b": 25.8}}, ...], '
-            f'"serving_basis": "per 100g", "data_quality": "good"}}\n\n'
+            f'{{"matrix_rows": [{example_row}, ...], '
+            f'"serving_basis": "per 100g", "data_quality": "good", "key_insight": "..."}}\n\n'
             f"Rules:\n"
-            f"- Include only nutrients found in the source data. Omit nulls entirely.\n"
-            f"- value_a is for {entity_a}, value_b is for {entity_b}.\n"
-            f"- data_quality: 'good' (both found), 'partial' (one found), 'not_found' (neither).\n"
-            f"- If data is absent for a nutrient for one food, omit that row rather than guessing."
+            f"- Include only nutrients found in the source data. Omit rows where no food has data.\n"
+            f"{col_rules}\n"
+            f"- data_quality: 'good' (all foods found), 'partial' (some found), 'not_found' (none).\n"
+            f"- key_insight: one sentence on the most clinically relevant finding, or null.\n"
+            f"- Omit a column key entirely from a row if that food has no data for that nutrient."
         )
 
         client = self._get_client()
@@ -348,16 +399,15 @@ class ResponseSynthesiser:
                 ],
             )
             raw = response.choices[0].message.content.strip()
-            # Strip accidental markdown code fences
             raw = _CODE_FENCE.sub("", raw).strip()
             parsed = _json.loads(raw)
             matrix_rows = parsed.get("matrix_rows", [])
-            # Validate row shape — drop malformed entries
+            # Validate row shape — must have nutrient + at least one value column
             clean_rows = [
                 r for r in matrix_rows
                 if isinstance(r, dict)
                 and "nutrient" in r
-                and ("value_a" in r or "value_b" in r)
+                and any(k in r for k in col_keys)
             ]
             return {
                 "matrix_rows": clean_rows,
@@ -365,6 +415,7 @@ class ResponseSynthesiser:
                 "points_b": [],
                 "serving_basis": parsed.get("serving_basis", "per 100g"),
                 "data_quality": parsed.get("data_quality", "partial" if clean_rows else "not_found"),
+                "key_insight": parsed.get("key_insight"),
             }
         except _json.JSONDecodeError as exc:
             logger.warning("synthesise_comparison_structured: JSON parse failed — %s", exc)
