@@ -209,8 +209,107 @@ def _extract_compared_entities(user_message: str) -> List[str]:
     return entities
 
 
-_RETRIEVAL_TOTAL_CAP = 16
-_RETRIEVAL_TOP_K_DEFAULT = 4
+_RETRIEVAL_TOTAL_CAP = 24  # raised to allow 6 passages per entity for full FCT coverage
+_RETRIEVAL_TOP_K_DEFAULT = 6  # macronutrient + mineral + vitamin sub-tables need 3 passages each
+
+# FCT sources that contain food composition tables — direct scan is reliable here.
+_FCT_SOURCE_TITLES = {"WestAfricaFCT2019", "KenyaFCT2018"}
+
+
+def _fct_direct_scan(
+    entity: str,
+    bm25_retriever: Any,
+    max_passages: int = 4,
+) -> List[Dict[str, str]]:
+    """
+    Directly scan the BM25 corpus for passages from FCT sources that contain
+    the entity name. Uses word-boundary matching so "groundnut" does not match
+    "bambara groundnut", and "bambara nut" matches "bambara groundnut" passages.
+
+    This bypasses BM25 ranking which is unreliable for food-specific lookups
+    because generic terms like 'dry', 'raw', 'protein', 'per 100g' score equally
+    on every entry in the table.
+    """
+    import re as _re
+    try:
+        all_passages = getattr(bm25_retriever, "_passages", [])
+    except Exception:
+        return []
+
+    entity_lower = entity.lower()
+    entity_tokens = [t for t in entity_lower.split() if len(t) > 3]
+
+    # Build an exclusion set: if the entity is a short generic word like "groundnut",
+    # exclude passages where it appears only as part of "bambara groundnut".
+    # Strategy: a passage qualifies if ANY food-code line (XX_NNN ...) contains
+    # entity tokens but its food name does NOT start with a different primary word
+    # that would make it a different food.
+    # Simpler heuristic: require ALL entity tokens to appear within 60 chars of
+    # a food code line, and the closest food name should match.
+    _food_code_re = _re.compile(r'\b\d{2}_\d+\b')
+
+    candidates: List[tuple] = []
+    for p in all_passages:
+        if p.source_title not in _FCT_SOURCE_TITLES:
+            continue
+        text_lower = p.text.lower()
+
+        # All entity tokens must appear in the passage
+        if not all(tok in text_lower for tok in entity_tokens):
+            continue
+
+        # Score = count of food-code lines where the food name starts with (or is)
+        # the entity — this prevents "groundnut" from matching "bambara groundnut"
+        # because "bambara" precedes "groundnut" in that food name.
+        # Bonus for raw/whole/shelled/dry entries over processed (flour, paste, extract).
+        entity_first_token = entity_tokens[0] if entity_tokens else entity_lower
+        _PROCESSED_TERMS = {'flour', 'paste', 'oil', 'extract', 'powder', 'cake', 'meal', 'butter', 'sauce', 'stew', 'recipe', 'porridge', 'couscous', 'fermented', 'roasted', 'fried', 'boiled', 'cooked', 'dried leaves'}
+        _RAW_TERMS = {'raw', 'fresh', 'whole', 'shelled', 'unprocessed'}
+        score = 0
+        for line in p.text.split('\n'):
+            line_lower = line.lower()
+            if not _food_code_re.search(line):
+                continue
+            if not all(tok in line_lower for tok in entity_tokens):
+                continue
+            # Find the food name portion (after the food code)
+            name_match = _re.search(r'\d{2}_\d+\s+(.*?)(?:\s{2,}|\t|1\.00|\d{3,})', line)
+            if name_match:
+                food_name = name_match.group(1).strip().lower()
+                # Food name must start with the entity's first significant token
+                if food_name.startswith(entity_first_token):
+                    base = 3
+                elif entity_lower in food_name[:len(entity_lower) + 5]:
+                    base = 2
+                else:
+                    continue  # entity only appears later — likely a different food
+                # Prefer raw/whole over processed
+                if any(t in food_name for t in _RAW_TERMS):
+                    base += 2
+                if any(t in food_name for t in _PROCESSED_TERMS):
+                    base -= 2
+                score += max(base, 0)
+            else:
+                score += 1
+
+        if score > 0:
+            candidates.append((score, p))
+
+    # Sort by score descending, deduplicate by text prefix
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    seen_prefixes: set = set()
+    results: List[Dict[str, str]] = []
+    for _, p in candidates:
+        prefix = p.text[:60]
+        if prefix in seen_prefixes:
+            continue
+        seen_prefixes.add(prefix)
+        results.append({"source_title": p.source_title, "excerpt": p.text[:600]})
+        if len(results) >= max_passages:
+            break
+
+    logger.debug("_fct_direct_scan: '%s' → %d FCT passages", entity, len(results))
+    return results
 
 
 def retrieve_per_entity(
@@ -220,21 +319,43 @@ def retrieve_per_entity(
     top_k_per_entity: int = _RETRIEVAL_TOP_K_DEFAULT,
 ) -> Dict[str, Any]:
     """
-    Fires one retrieval query per entity and returns a dict mapping each
-    entity name to its list of passage dicts (source_title, excerpt, entity).
+    Retrieves FCT passages for each entity.
+
+    Strategy:
+      1. Direct FCT corpus scan by food name substring — deterministic, high precision.
+      2. Fallback to hybrid retriever if direct scan yields nothing.
 
     Caps total passages at _RETRIEVAL_TOTAL_CAP to stay within synthesis context.
-    Falls back to "{entity} nutritional composition per 100g" when no dimension given.
     """
     effective_k = min(top_k_per_entity, _RETRIEVAL_TOTAL_CAP // len(entities))
     entity_passages: Dict[str, List[Dict[str, str]]] = {}
 
+    # Resolve the underlying BM25 retriever for direct scanning
+    bm25 = None
+    if hasattr(retriever, "_bm25"):
+        bm25 = retriever._bm25
+    elif hasattr(retriever, "_passages"):
+        bm25 = retriever
+
     for entity in entities:
+        # 1. Try direct FCT scan first
+        if bm25 is not None:
+            direct = _fct_direct_scan(entity, bm25, max_passages=effective_k)
+            if direct:
+                entity_passages[entity] = [
+                    {**d, "entity": entity} for d in direct
+                ]
+                logger.debug(
+                    "retrieve_per_entity: '%s' → %d passages (direct FCT scan)",
+                    entity, len(entity_passages[entity]),
+                )
+                continue
+
+        # 2. Fallback to hybrid retriever
         if dimension:
-            query = f"{entity} {dimension} per 100g raw dry"
+            query = f"{entity} {dimension} per 100g"
         else:
-            # "dry raw" anchors retrieval to standalone FCT entries, not mixed dishes
-            query = f"{entity} dry raw nutritional composition per 100g energy protein fat carbohydrate"
+            query = f"{entity} nutritional composition per 100g"
         try:
             result = retriever.retrieve(query, top_k=effective_k)
             entity_passages[entity] = [
@@ -242,13 +363,12 @@ def retrieve_per_entity(
                 for p in result.passages
             ]
             logger.debug(
-                "ComparisonWorkflow retrieve_per_entity: '%s' → %d passages",
+                "retrieve_per_entity: '%s' → %d passages (hybrid retriever fallback)",
                 entity, len(entity_passages[entity]),
             )
         except Exception as exc:
             logger.warning(
-                "ComparisonWorkflow retrieve_per_entity: retrieval failed for '%s' — %s",
-                entity, exc,
+                "retrieve_per_entity: retrieval failed for '%s' — %s", entity, exc,
             )
             entity_passages[entity] = []
 
