@@ -280,12 +280,14 @@ class DisplayAdapter:
                 points_b=structured.get("points_b", []),
             )
 
-        # LLM prose synthesis
+        # LLM prose synthesis — grounded in extracted matrix rows when available
         synth = self._synthesiser.synthesise_comparison(
             entity_a=entity_a,
             entity_b=entity_b,
             evidence=data.get("evidence", []),
             comparison_mode=comparison_mode,
+            matrix_rows=matrix_rows if matrix_rows else None,
+            entities=all_entities,
         )
         final_summary = synth.get("summary") or (
             f"A {comparison_mode} comparison of {entity_a} and {entity_b}."

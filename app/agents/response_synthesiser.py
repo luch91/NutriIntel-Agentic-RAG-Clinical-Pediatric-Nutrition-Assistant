@@ -24,7 +24,8 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "llama-3.1-8b-instant"
+_MODEL = "llama-3.1-8b-instant"          # prose synthesis (fast, lower quality ok)
+_MODEL_STRUCTURED = "llama-3.3-70b-versatile"  # FCT data extraction (needs strong JSON + reasoning)
 _TEMPERATURE = 0.3
 _MAX_TOKENS = 300
 _MAX_TOKENS_STRUCTURED = 2048  # full 30-row nutrient table with up to 5 entity columns
@@ -305,20 +306,46 @@ class ResponseSynthesiser:
         entity_b: str,
         evidence: list,
         comparison_mode: str,
+        matrix_rows: Optional[list] = None,
+        entities: Optional[List[str]] = None,
     ) -> dict:
         """
-        Returns dict with keys: summary, executive_takeaway, interpretation
+        Returns dict with keys: summary, executive_takeaway, interpretation.
+
+        When matrix_rows are available (from synthesise_comparison_structured),
+        uses those as the grounding data instead of raw FCT passages, preventing
+        hallucinated values and wrong units.
         """
-        evidence_text = _format_evidence(evidence)
+        if matrix_rows:
+            # Ground the prose strictly in the extracted structured data
+            all_entities = entities or [entity_a, entity_b]
+            col_keys = [f"value_{chr(97 + i)}" for i in range(len(all_entities))]
+            # Build a compact table string: only rows with at least one real value
+            real_rows = [
+                r for r in matrix_rows
+                if any(r.get(k, "—") != "—" for k in col_keys)
+            ]
+            if real_rows:
+                header = "Nutrient | Unit | " + " | ".join(all_entities)
+                rows_text = "\n".join(
+                    f"{r['nutrient']} | {r.get('unit','')} | " +
+                    " | ".join(str(r.get(k, "—")) for k in col_keys)
+                    for r in real_rows[:15]  # cap at 15 rows for token budget
+                )
+                data_text = f"Extracted nutrient data (per 100g):\n{header}\n{rows_text}"
+            else:
+                data_text = "No nutrient values were extracted from the Food Composition Tables."
+        else:
+            data_text = f"Retrieved evidence:\n{_format_evidence(evidence)}"
 
         user_prompt = (
-            f"Comparing: {entity_a} vs {entity_b}\n"
-            f"Mode: {comparison_mode}\n\n"
-            f"Retrieved evidence:\n{evidence_text}\n\n"
+            f"Comparing: {entity_a} vs {entity_b}\n\n"
+            f"{data_text}\n\n"
             f"Write exactly three parts, each on its own line, separated by '|||'.\n"
-            f"Part 1: one sentence summarising the comparison.\n"
-            f"Part 2: one to two sentences on the most clinically relevant difference.\n"
-            f"Part 3: one to two sentences guiding clinical application.\n"
+            f"Part 1: one sentence summarising the comparison based ONLY on the data above.\n"
+            f"Part 2: one to two sentences on the most clinically relevant difference shown in the data.\n"
+            f"Part 3: one to two sentences of practical clinical guidance. "
+            f"Do NOT invent values or mention foods not in the data above.\n"
             f"Output format: <Part 1> ||| <Part 2> ||| <Part 3>"
         )
         raw = self._call(_SYSTEM_COMPARISON, user_prompt)
@@ -485,7 +512,7 @@ class ResponseSynthesiser:
 
         try:
             response = client.chat.completions.create(  # type: ignore[union-attr]
-                model=_MODEL,
+                model=_MODEL_STRUCTURED,
                 temperature=0,
                 max_tokens=max_tokens,
                 messages=[
