@@ -125,14 +125,23 @@ NUTRIENT_DEFINITIONS: List[dict] = [
 # Map a user-supplied dimension string to the matching subset of NUTRIENT_DEFINITIONS.
 # Accepts a single term ("zinc") or a comma/and-separated list ("zinc and iron" / "zinc, iron").
 # If None/empty or no matches → return all definitions.
+_DIMENSION_NOISE = _re.compile(
+    r'\b(?:content|level|levels|amount|amounts|concentration|concentrations|'
+    r'value|values|status|intake|requirement|requirements|data|info|information)\b',
+    _re.IGNORECASE,
+)
+
 def _resolve_nutrient_targets(dimension: Optional[str]) -> List[dict]:
     if not dimension:
         return NUTRIENT_DEFINITIONS
+    # Strip trailing noise words like "content", "level", "amount"
+    clean_dim = _DIMENSION_NOISE.sub('', dimension).strip().strip(',').strip()
+    if not clean_dim:
+        return NUTRIENT_DEFINITIONS
     # Split on "and", "or", commas so "zinc and iron" → ["zinc", "iron"]
-    import re as _re2
-    terms = [t.strip() for t in _re2.split(r'[,\s]+(?:and|or)[,\s]+|,', dimension, flags=_re2.IGNORECASE) if t.strip()]
+    terms = [t.strip() for t in _re.split(r'[,\s]+(?:and|or)[,\s]+|,', clean_dim, flags=_re.IGNORECASE) if t.strip()]
     if not terms:
-        terms = [dimension.strip()]
+        terms = [clean_dim]
     matched = []
     seen = set()
     for term in terms:

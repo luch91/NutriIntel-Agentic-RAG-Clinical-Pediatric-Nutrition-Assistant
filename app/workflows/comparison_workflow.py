@@ -209,8 +209,8 @@ def _extract_compared_entities(user_message: str) -> List[str]:
     return entities
 
 
-_RETRIEVAL_TOTAL_CAP = 24  # raised to allow 6 passages per entity for full FCT coverage
-_RETRIEVAL_TOP_K_DEFAULT = 6  # macronutrient + mineral + vitamin sub-tables need 3 passages each
+_RETRIEVAL_TOTAL_CAP = 24
+_RETRIEVAL_TOP_K_DEFAULT = 6
 
 # FCT sources that contain food composition tables — direct scan is reliable here.
 _FCT_SOURCE_TITLES = {"WestAfricaFCT2019", "KenyaFCT2018"}
@@ -263,44 +263,74 @@ def _fct_direct_scan(
         # because "bambara" precedes "groundnut" in that food name.
         # Bonus for raw/whole/shelled/dry entries over processed (flour, paste, extract).
         entity_first_token = entity_tokens[0] if entity_tokens else entity_lower
-        _PROCESSED_TERMS = {'flour', 'paste', 'oil', 'extract', 'powder', 'cake', 'meal', 'butter', 'sauce', 'stew', 'recipe', 'porridge', 'couscous', 'fermented', 'roasted', 'fried', 'boiled', 'cooked', 'dried leaves'}
-        _RAW_TERMS = {'raw', 'fresh', 'whole', 'shelled', 'unprocessed'}
-        score = 0
+        _PROCESSED_TERMS = {'flour', 'paste', 'oil', 'extract', 'powder', 'cake', 'meal',
+                            'butter', 'sauce', 'stew', 'recipe', 'porridge', 'couscous',
+                            'fermented', 'roasted', 'fried', 'boiled', 'cooked', 'dried leaves',
+                            'defatted', 'fortified', 'processed', 'milled', 'pounded'}
+        _RAW_TERMS = {'raw', 'fresh', 'whole', 'shelled', 'unprocessed', 'dried'}
+        _VARIETY_TERMS = {'n=', 'variety', 'black white', 'brown white', 'cream black',
+                          'cream pink', 'maroon', 'red eye', 'white eye', 'cultivar'}
+
+        # Find the best-matching entity line in this passage.
+        # A passage qualifies only if its highest-scoring entity line is NOT processed.
+        best_line_score = 0
+        best_line_processed = False
         for line in p.text.split('\n'):
             line_lower = line.lower()
             if not _food_code_re.search(line):
                 continue
             if not all(tok in line_lower for tok in entity_tokens):
                 continue
-            # Find the food name portion (after the food code)
             name_match = _re.search(r'\d{2}_\d+\s+(.*?)(?:\s{2,}|\t|1\.00|\d{3,})', line)
             if name_match:
                 food_name = name_match.group(1).strip().lower()
-                # Food name must start with the entity's first significant token
                 if food_name.startswith(entity_first_token):
                     base = 3
                 elif entity_lower in food_name[:len(entity_lower) + 5]:
                     base = 2
                 else:
-                    continue  # entity only appears later — likely a different food
-                # Prefer raw/whole over processed
+                    continue
+                is_processed = any(t in food_name for t in _PROCESSED_TERMS)
                 if any(t in food_name for t in _RAW_TERMS):
                     base += 2
-                if any(t in food_name for t in _PROCESSED_TERMS):
-                    base -= 2
-                score += max(base, 0)
+                if is_processed:
+                    base -= 3  # strong penalty — processed entries should not outrank raw
+                if any(t in food_name for t in _VARIETY_TERMS):
+                    base -= 1
+                line_score = max(base, 0)
+                if line_score > best_line_score:
+                    best_line_score = line_score
+                    best_line_processed = is_processed
             else:
-                score += 1
+                if best_line_score == 0:
+                    best_line_score = 1
 
-        if score > 0:
-            candidates.append((score, p))
+        # Exclude passage if best entity line is a processed form
+        if best_line_score > 0 and not best_line_processed:
+            candidates.append((best_line_score, p))
 
-    # Sort by score descending, deduplicate by text prefix
+    # Sort by score descending, deduplicate by text prefix.
+    # Canonical entries (no variety qualifier) are boosted — collect them first,
+    # then fill remaining slots with variety entries to ensure all sub-tables covered.
     candidates.sort(key=lambda x: x[0], reverse=True)
+
+    _VARIETY_RE = _re.compile(r'\bn=\d|\b(?:variety|cultivar|black white|brown white|cream black|cream pink|maroon white)\b', _re.IGNORECASE)
+    canonical: List[tuple] = []
+    variety: List[tuple] = []
+    for score, p in candidates:
+        if _VARIETY_RE.search(p.text):
+            variety.append((score, p))
+        else:
+            canonical.append((score, p))
+
+    ordered = canonical + variety  # canonical passages first
+
     seen_prefixes: set = set()
     results: List[Dict[str, str]] = []
-    for _, p in candidates:
-        prefix = p.text[:60]
+    for _, p in ordered:
+        # Use 120 chars for dedup — passages from different FCT sub-tables
+        # (macro, mineral, vitamin) share the same 60-char header prefix.
+        prefix = p.text[:120]
         if prefix in seen_prefixes:
             continue
         seen_prefixes.add(prefix)
@@ -308,7 +338,8 @@ def _fct_direct_scan(
         if len(results) >= max_passages:
             break
 
-    logger.debug("_fct_direct_scan: '%s' → %d FCT passages", entity, len(results))
+    logger.debug("_fct_direct_scan: '%s' → %d FCT passages (%d canonical, %d variety)",
+                 entity, len(results), len(canonical), len(variety))
     return results
 
 
