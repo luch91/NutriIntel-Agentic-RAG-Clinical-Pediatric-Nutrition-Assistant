@@ -301,9 +301,8 @@ def _fct_direct_scan(
                 if line_score > best_line_score:
                     best_line_score = line_score
                     best_line_processed = is_processed
-            else:
-                if best_line_score == 0:
-                    best_line_score = 1
+            # No fallback — only count lines where the food name is parseable
+            # and the entity matches. Unparseable lines do not score.
 
         # Exclude passage if best entity line is a processed form
         if best_line_score > 0 and not best_line_processed:
