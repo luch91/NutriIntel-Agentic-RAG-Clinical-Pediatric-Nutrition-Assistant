@@ -537,13 +537,12 @@ class ResponseSynthesiser:
             )
             raw = response.choices[0].message.content.strip()
             raw = _CODE_FENCE.sub("", raw).strip()
+            logger.warning(
+                "synthesise_comparison_structured: raw LLM response (first 600 chars): %s",
+                raw[:600],
+            )
             parsed = _json.loads(raw)
             matrix_rows = parsed.get("matrix_rows", [])
-
-            logger.debug(
-                "synthesise_comparison_structured: raw LLM response (first 500 chars): %s",
-                raw[:500],
-            )
 
             # Validate row shape — must have nutrient field
             llm_rows_raw = [r for r in matrix_rows if isinstance(r, dict) and "nutrient" in r]
