@@ -497,7 +497,8 @@ class ResponseSynthesiser:
             f"Each food's data is in its own labelled block.\n\n"
             f"{_WAFCT_COLUMNS}\n"
             f"Foods to extract:\n{entity_lines}\n\n"
-            f"Nutrients to extract (also accept any of the listed aliases):\n{nutrient_lines}\n\n"
+            f"Nutrients to extract — look for these aliases, but use EXACTLY the display name shown in quotes "
+            f"as the 'nutrient' field in your JSON output:\n{nutrient_lines}\n\n"
             f"FCT Data:\n{raw_context}\n\n"
             f"Return ONLY valid JSON — no markdown, no code fences, no explanation.\n"
             f"Structure:\n"
@@ -509,6 +510,7 @@ class ResponseSynthesiser:
             f"{col_rules}\n"
             f"2. Use the column schemas above to map positional numbers to nutrient names when headers are absent.\n"
             f"3. ALWAYS emit one row for EVERY nutrient in this list: {required_rows}. "
+            f"Use the display name exactly as listed (e.g. 'Zinc' not 'ZN'). "
             f"If a value is not found, use the string \"—\" (not null, not 0, not omit).\n"
             f"4. data_quality: 'good' = all foods have at least macronutrients; "
             f"'partial' = some foods found; 'not_found' = no food data found.\n"
@@ -538,11 +540,30 @@ class ResponseSynthesiser:
             parsed = _json.loads(raw)
             matrix_rows = parsed.get("matrix_rows", [])
 
+            logger.debug(
+                "synthesise_comparison_structured: raw LLM response (first 500 chars): %s",
+                raw[:500],
+            )
+
             # Validate row shape — must have nutrient field
-            llm_rows = {
-                r["nutrient"]: r for r in matrix_rows
-                if isinstance(r, dict) and "nutrient" in r
-            }
+            llm_rows_raw = [r for r in matrix_rows if isinstance(r, dict) and "nutrient" in r]
+
+            # Build alias → nutrient_def index so LLM-returned names like "ZN", "Zn",
+            # "ZINC", or "Zinc" all resolve to the display name "Zinc".
+            alias_to_display: dict = {}
+            for nd in NUTRIENT_DEFINITIONS:
+                alias_to_display[nd["display"].lower()] = nd["display"]
+                for alias in nd["aliases"]:
+                    alias_to_display[alias.lower()] = nd["display"]
+
+            # Map every LLM row to its canonical display name
+            llm_rows: dict = {}
+            for r in llm_rows_raw:
+                raw_name = str(r["nutrient"]).strip()
+                canonical = alias_to_display.get(raw_name.lower(), raw_name)
+                # Only keep first occurrence (prefer exact display-name match if dupes)
+                if canonical not in llm_rows:
+                    llm_rows[canonical] = r
 
             # Merge LLM output with full nutrient list — always emit every row
             clean_rows = []
