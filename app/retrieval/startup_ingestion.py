@@ -77,10 +77,11 @@ def _build_and_ingest():
                     )
         else:
             logger.warning(
-                "startup_ingestion: QDRANT_URL set but no bm25_corpus.pkl found at %s "
-                "— BM25 search will be empty. Run scripts/build_cloud_index.py first.",
+                "startup_ingestion: bm25_corpus.pkl not found at %s "
+                "— rebuilding BM25 corpus from Qdrant (one-time cold-start cost).",
                 bm25_path,
             )
+            _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever)
     else:
         # Local mode — ingest PDFs on the fly.
         from app.retrieval.ingestion_pipeline import IngestionPipeline
@@ -109,6 +110,69 @@ def _build_and_ingest():
     agent = RetrievalAgent(vector_retriever=vector_retriever, bm25_retriever=bm25_retriever)
     logger.info("startup_ingestion: RetrievalAgent ready")
     return agent
+
+
+def _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever) -> None:
+    """
+    Scroll all passages from Qdrant and build an in-memory BM25 index.
+    Called only when bm25_corpus.pkl is absent (e.g. first deploy on Vercel).
+    Typically takes 20-60 seconds for ~37k passages — happens once per cold start.
+    """
+    from app.retrieval import EnrichedPassage
+
+    try:
+        client = vector_retriever._client
+        collection = "cpna_passages"
+
+        # Check the collection exists and has points
+        info = client.get_collection(collection)
+        total = info.points_count or 0
+        if total == 0:
+            logger.warning("_rebuild_bm25_from_qdrant: collection '%s' is empty", collection)
+            return
+
+        logger.info(
+            "_rebuild_bm25_from_qdrant: scrolling %d points from Qdrant to rebuild BM25",
+            total,
+        )
+
+        passages = []
+        offset = None
+        batch_size = 500
+        while True:
+            points, next_offset = client.scroll(
+                collection_name=collection,
+                limit=batch_size,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                p = point.payload or {}
+                text = p.get("text", "")
+                if text:
+                    passages.append(EnrichedPassage(
+                        passage_id=p.get("passage_id", str(point.id)),
+                        text=text,
+                        source_title=p.get("source_title", ""),
+                        source_type=p.get("source_type", ""),
+                    ))
+            if next_offset is None:
+                break
+            offset = next_offset
+
+        logger.info(
+            "_rebuild_bm25_from_qdrant: fetched %d passages, building BM25 index",
+            len(passages),
+        )
+        bm25_retriever.add_corpus(passages)
+        logger.info("_rebuild_bm25_from_qdrant: BM25 index ready (%d passages)", len(passages))
+
+    except Exception as exc:
+        logger.warning(
+            "_rebuild_bm25_from_qdrant: failed (%s) — BM25 will be empty",
+            str(exc).encode("ascii", "replace").decode("ascii"),
+        )
 
 
 def _collect_pdf_paths() -> list[str]:
