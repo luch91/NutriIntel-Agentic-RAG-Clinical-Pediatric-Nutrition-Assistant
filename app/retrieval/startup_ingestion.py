@@ -76,12 +76,20 @@ def _build_and_ingest():
                         exc,
                     )
         else:
-            logger.warning(
-                "startup_ingestion: bm25_corpus.pkl not found at %s "
-                "— rebuilding BM25 corpus from Qdrant (one-time cold-start cost).",
-                bm25_path,
-            )
-            _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever)
+            # Check /tmp — a previously rebuilt corpus cached within this instance.
+            tmp_path = Path("/tmp/bm25_corpus.pkl")
+            if tmp_path.exists():
+                try:
+                    bm25_retriever.load(str(tmp_path))
+                    logger.info("startup_ingestion: loaded BM25 corpus from /tmp cache")
+                except Exception:
+                    _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever, save_to=tmp_path)
+            else:
+                logger.warning(
+                    "startup_ingestion: bm25_corpus.pkl not found — rebuilding from Qdrant "
+                    "(cold-start cost, result cached to /tmp for this instance)."
+                )
+                _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever, save_to=tmp_path)
     else:
         # Local mode — ingest PDFs on the fly.
         from app.retrieval.ingestion_pipeline import IngestionPipeline
@@ -112,7 +120,7 @@ def _build_and_ingest():
     return agent
 
 
-def _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever) -> None:
+def _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever, save_to=None) -> None:
     """
     Scroll all passages from Qdrant and build an in-memory BM25 index.
     Called only when bm25_corpus.pkl is absent (e.g. first deploy on Vercel).
@@ -167,6 +175,13 @@ def _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever) -> None:
         )
         bm25_retriever.add_corpus(passages)
         logger.info("_rebuild_bm25_from_qdrant: BM25 index ready (%d passages)", len(passages))
+
+        if save_to is not None:
+            try:
+                bm25_retriever.save(str(save_to))
+                logger.info("_rebuild_bm25_from_qdrant: corpus cached to %s", save_to)
+            except Exception as save_exc:
+                logger.warning("_rebuild_bm25_from_qdrant: could not cache to %s: %s", save_to, save_exc)
 
     except Exception as exc:
         logger.warning(
