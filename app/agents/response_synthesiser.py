@@ -537,7 +537,7 @@ class ResponseSynthesiser:
             )
             raw = response.choices[0].message.content.strip()
             raw = _CODE_FENCE.sub("", raw).strip()
-            logger.warning(
+            logger.debug(
                 "synthesise_comparison_structured: raw LLM response (first 600 chars): %s",
                 raw[:600],
             )
