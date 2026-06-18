@@ -467,7 +467,7 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     elif intent_label == IntentLabel.THERAPY:
         if rdata.get("downgrade_note"):
             gatekeeper_status = "failed"
-            downgrade_reason = "unsupported_condition"
+            downgrade_reason = rdata.get("downgrade_reason", "unsupported_condition")
             user_facing_explanation = str(rdata.get("downgrade_note", ""))
         else:
             gatekeeper_status = "passed"

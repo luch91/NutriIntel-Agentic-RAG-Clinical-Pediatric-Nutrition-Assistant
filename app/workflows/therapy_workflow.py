@@ -152,6 +152,7 @@ class TherapyWorkflow:
                 state, user_message, state_manager, downgraded_from_therapy=True
             )
             reco_result.response_data["downgrade_note"] = decision.user_explanation
+            reco_result.response_data["downgrade_reason"] = decision.downgrade_reason
             return reco_result
 
         # Step 4 — compute therapy plan
