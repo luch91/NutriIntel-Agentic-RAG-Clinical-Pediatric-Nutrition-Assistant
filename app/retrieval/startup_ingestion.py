@@ -76,20 +76,11 @@ def _build_and_ingest():
                         exc,
                     )
         else:
-            # Check /tmp — a previously rebuilt corpus cached within this instance.
-            tmp_path = Path("/tmp/bm25_corpus.pkl")
-            if tmp_path.exists():
-                try:
-                    bm25_retriever.load(str(tmp_path))
-                    logger.info("startup_ingestion: loaded BM25 corpus from /tmp cache")
-                except Exception:
-                    _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever, save_to=tmp_path)
-            else:
-                logger.warning(
-                    "startup_ingestion: bm25_corpus.pkl not found — rebuilding from Qdrant "
-                    "(cold-start cost, result cached to /tmp for this instance)."
-                )
-                _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever, save_to=tmp_path)
+            logger.info(
+                "startup_ingestion: bm25_corpus.pkl not found — rebuilding from Qdrant "
+                "(cold-start cost, kept in-memory only to preserve /tmp space)."
+            )
+            _rebuild_bm25_from_qdrant(bm25_retriever, vector_retriever, save_to=None)
     else:
         # Local mode — ingest PDFs on the fly.
         from app.retrieval.ingestion_pipeline import IngestionPipeline
