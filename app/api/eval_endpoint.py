@@ -355,13 +355,17 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     # -----------------------------------------------------------------------
     # 3. Pending-slot check (loose reply resolution)
     # -----------------------------------------------------------------------
+    _loose_reply_slot: Optional[str] = None
+    _loose_reply_value: Optional[str] = None
     if state.active_task_context.pending_slots:
         resolution = sm.resolve_loose_reply(session_id, body.userMessage)
         if resolution.resolution_type == ResolutionType.SLOT_FILL and resolution.resolved_slot:
+            _loose_reply_slot = resolution.resolved_slot
+            _loose_reply_value = resolution.resolved_value or body.userMessage
             state = sm.confirm_slot(
                 session_id,
                 resolution.resolved_slot,
-                resolution.resolved_value or body.userMessage,
+                _loose_reply_value,
             )
             if state.active_task_context.current_intent is None:
                 state.active_task_context.current_intent = IntentLabel.THERAPY
@@ -418,6 +422,7 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
     resolved_value_str: Optional[str] = None
     gatekeeper_status = "not_applicable"
     slot_filling_triggered = False
+
     downgrade_reason: Optional[str] = None
     user_facing_explanation: Optional[str] = None
     context_inheritance_trace: Optional[Dict[str, Any]] = None
@@ -500,9 +505,11 @@ async def eval_endpoint(request: Request, body: EvalRequest) -> JSONResponse:
         }
 
     # Resolved slot (for loose-reply eval)
-    pending_slots = state.active_task_context.pending_slots
-    if pending_slots and not slot_filling_triggered:
-        resolved_slot = pending_slots[0] if pending_slots else None
+    if _loose_reply_slot:
+        resolved_slot = _loose_reply_slot
+        resolved_value_str = _loose_reply_value
+    elif state.active_task_context.pending_slots and not slot_filling_triggered:
+        resolved_slot = state.active_task_context.pending_slots[0]
         resolved_value_str = body.userMessage
 
     # -----------------------------------------------------------------------
