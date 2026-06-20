@@ -200,6 +200,9 @@ def _build_retrieval_log(response_data: Dict[str, Any]) -> Dict[str, Any]:
     debug = response_data.get("_retrieval_debug")
     if debug:
         log["debug"] = debug
+    engine_error = response_data.get("error")
+    if engine_error:
+        log["engine_error"] = str(engine_error)[:500]
     return log
 
 
