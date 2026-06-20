@@ -41,9 +41,10 @@ Intent Classifier (ONNX all-MiniLM-L6-v2 + LogisticRegression, 98.6% F1)
          │
          └── All workflows → Hybrid retrieval (vector + BM25 → rerank → top 7)
                                   ├── Qdrant Cloud (all-MiniLM-L6-v2, 384 dims)
-                                  └── BM25 (rank-bm25, pre-serialised corpus)
-                                       │
-                                       └── Synthesised prose via Groq (llama-3.1-8b-instant)
+                                  ├── BM25 (rank-bm25, rebuilt from Qdrant on cold start)
+                                  ├── Rerank: Cohere rerank-4-fast via OpenRouter (prod)
+                                  │           / local cross-encoder (dev)
+                                  └── Synthesised prose via Groq (llama-3.3-70b-versatile)
 ```
 
 **Key design properties:**
@@ -51,7 +52,7 @@ Intent Classifier (ONNX all-MiniLM-L6-v2 + LogisticRegression, 98.6% F1)
 - Comparison workflow extracts **2–5 entities** from a single query (`extract_comparison_entities()`), handles `vs`, `versus`, commas, "X and Y", colon-style preambles ("which has more zinc: X or Y"), and dimension clauses ("for protein")
 - Phase-aware conversation state (`IDLE → SLOT_FILLING → DISPATCHING → RESPONDING`) prevents bare slot values ("10 year old", "30kg") from being misclassified as new queries; stale `pending_intent` is cleared when a new COMPARISON or GENERAL query arrives
 - Source filter uses `source_title` matching — not `passage_id` — because passage IDs are MD5 hashes
-- On Vercel, startup ingestion is **lazy per-request** (FastAPI `lifespan` does not fire on serverless); Qdrant Cloud is pre-populated and queried via HTTP; BM25 corpus is pre-serialised
+- On Vercel, startup ingestion is **lazy per-request** (FastAPI `lifespan` does not fire on serverless); Qdrant Cloud is pre-populated and queried via HTTP; BM25 corpus is rebuilt from Qdrant on cold start and cached to `/tmp` for the function instance lifetime
 - Comparison responses use a Groq JSON-extraction call (temperature=0) to populate a `QuantitativeMatrix` from FCT passages before prose synthesis
 - Response prose is synthesised by Groq after retrieval; all numeric targets come from the deterministic engine
 - OCR fallback (PyMuPDF + Tesseract) for scanned PDFs where `PyPDFLoader` returns empty pages
@@ -92,9 +93,10 @@ Type 1 diabetes · Cystic fibrosis · Food allergy · Preterm nutrition · Chron
 | Frontend | Next.js 14 (App Router), TypeScript |
 | Vector store | **Qdrant Cloud** (production) / in-memory (local dev) |
 | Embeddings | `all-MiniLM-L6-v2` via **ONNX Runtime** (local) / `fastembed` (Vercel fallback, no torch) |
-| BM25 | `rank-bm25`, pre-serialised corpus (`bm25_corpus.pkl`) |
+| BM25 | `rank-bm25`, rebuilt from Qdrant on cold start, cached to `/tmp` |
+| Reranker | **Cohere rerank-4-fast** via OpenRouter (production) / local cross-encoder `ms-marco-MiniLM-L-6-v2` (dev) |
 | Intent classifier | ONNX all-MiniLM-L6-v2 + scikit-learn LogisticRegression (local); rule-based `MockIntentClassifier` (Vercel) |
-| LLM synthesis | **Groq** `llama-3.1-8b-instant` (prose fields only; numeric values never LLM-generated) |
+| LLM synthesis | **Groq** `llama-3.3-70b-versatile` (comparison JSON extraction, temperature=0) + `llama-3.1-8b-instant` (prose synthesis); numeric values never LLM-generated |
 | PDF extraction | LangChain PyPDFLoader + PyMuPDF/Tesseract OCR fallback |
 | State | Redis (in-memory fallback when unavailable) |
 | Observability | structlog (JSON), Prometheus metrics |
@@ -161,8 +163,9 @@ The backend runs at `http://localhost:8000`. On first request in local mode (no 
 | `QDRANT_URL` | Qdrant Cloud cluster URL |
 | `QDRANT_API_KEY` | Qdrant Cloud API key |
 | `GROQ_API_KEY` | Groq API key for prose synthesis |
+| `OPENROUTER_API_KEY` | OpenRouter API key for Cohere reranking |
 
-All three must be set in Vercel dashboard without a UTF-8 BOM — the code strips BOM (`﻿`) defensively.
+All must be set in Vercel dashboard without a UTF-8 BOM — the code strips BOM (`﻿`) defensively.
 
 ---
 
@@ -208,7 +211,7 @@ GET  /metrics        (Prometheus)
 Query → LLM rewrite → vector search (top 20, Qdrant Cloud)
                      → BM25 search (top 20, pre-serialised corpus)
       → merge + deduplicate → condition-aware source filter
-      → priority source boosting → rerank → top 7 passages
+      → priority source boosting → Cohere rerank-4-fast (OpenRouter) → top 7 passages
       → Groq synthesis → prose fields in response
 ```
 
@@ -228,16 +231,16 @@ During `SLOT_FILLING`, the intent classifier is bypassed — bare values like `"
 
 ## Eval Platform
 
-The CPNA Eval platform ([cpna-eval-one.vercel.app](https://cpna-eval-one.vercel.app)) runs 10 E2E scenarios against the live API via `/api/eval`, scoring across six dimensions:
+The CPNA Eval platform ([cpna-eval-one.vercel.app](https://cpna-eval-one.vercel.app)) runs 18 E2E scenarios against the live API via `/api/eval`, covering all 4 query types and all 11 supported therapy conditions. Scoring across six dimensions:
 
 | Dimension | Score |
 |---|---|
 | Intent Accuracy | 100% |
 | Gatekeeper Pass Rate | 100% |
-| Contract Conformance | 98% |
+| Contract Conformance | 100% |
 | Context Safety | 100% |
-| Retrieval Quality | 98% |
-| **Overall** | **100%** (aggregate) |
+| Retrieval Quality | 100% |
+| **Overall** | **100%** (18/18 scenarios) |
 
 ---
 
