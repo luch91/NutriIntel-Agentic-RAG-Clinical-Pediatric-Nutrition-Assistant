@@ -168,6 +168,7 @@ class TherapyWorkflow:
 
         # Step 5 — retrieval for evidence
         evidence_passages = []
+        retrieval_debug = None
         if self._retrieval is not None:
             try:
                 retrieval_result = self._retrieval.retrieve(
@@ -180,6 +181,9 @@ class TherapyWorkflow:
                 ]
             except Exception as exc:
                 logger.warning("TherapyWorkflow: retrieval failed — %s", exc)
+                retrieval_debug = f"retrieval_error: {type(exc).__name__}: {exc}"
+        else:
+            retrieval_debug = "retrieval_agent_is_none"
 
         # Step 6 — assemble raw output
         precision_note = decision.user_explanation  # may carry biomarker note
@@ -191,9 +195,10 @@ class TherapyWorkflow:
             "meal_plan": engine_result.meal_plan.model_dump(),
             "evidence": evidence_passages,
             "precision_note": precision_note,
-            # computation_trace is INTERNAL — DisplayAdapter must strip this
             "_computation_trace": engine_result.computation_trace,
         }
+        if retrieval_debug:
+            response_data["_retrieval_debug"] = retrieval_debug
 
         return WorkflowResult(
             response_data=response_data,

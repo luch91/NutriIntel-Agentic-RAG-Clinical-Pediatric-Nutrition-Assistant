@@ -28,6 +28,7 @@ class GeneralWorkflow:
         state_manager: StateManager,
     ) -> WorkflowResult:
         evidence_passages = []
+        retrieval_debug: Optional[str] = None
         if self._retrieval is not None:
             try:
                 retrieval_result = self._retrieval.retrieve(user_message)
@@ -37,12 +38,17 @@ class GeneralWorkflow:
                 ]
             except Exception as exc:
                 logger.warning("GeneralWorkflow: retrieval failed — %s", exc)
+                retrieval_debug = f"retrieval_error: {type(exc).__name__}: {exc}"
+        else:
+            retrieval_debug = "retrieval_agent_is_none"
 
         response_data: Dict[str, Any] = {
             "query_type": "general",
             "query": user_message,
             "evidence": evidence_passages,
         }
+        if retrieval_debug:
+            response_data["_retrieval_debug"] = retrieval_debug
 
         return WorkflowResult(
             response_data=response_data,

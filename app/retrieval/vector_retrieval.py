@@ -81,12 +81,14 @@ class VectorRetriever:
             logger.info("VectorRetriever: loaded SentenceTransformer model %s", _MODEL_NAME)
         except ImportError:
             try:
+                import os
+                if not os.environ.get("FASTEMBED_CACHE_PATH"):
+                    os.environ["FASTEMBED_CACHE_PATH"] = "/tmp/fastembed_cache"
                 from fastembed import TextEmbedding
-                # Must use the same model as the indexed collection (all-MiniLM-L6-v2, 384-dim)
                 self._model = _FastEmbedWrapper(TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2"))
                 logger.info("VectorRetriever: sentence-transformers unavailable, using fastembed (all-MiniLM-L6-v2)")
-            except ImportError:
-                logger.error("VectorRetriever: neither sentence-transformers nor fastembed available — vector search disabled")
+            except Exception as exc:
+                logger.error("VectorRetriever: fastembed init failed (%s) — vector search disabled", exc)
                 self._model = None
         return self._model
 

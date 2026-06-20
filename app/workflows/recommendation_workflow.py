@@ -61,6 +61,7 @@ class RecommendationWorkflow:
 
         # Retrieval
         evidence_passages = []
+        retrieval_debug: Optional[str] = None
         if self._retrieval is not None:
             try:
                 diagnosis = (
@@ -77,12 +78,17 @@ class RecommendationWorkflow:
                 ]
             except Exception as exc:
                 logger.warning("RecommendationWorkflow: retrieval failed — %s", exc)
+                retrieval_debug = f"retrieval_error: {type(exc).__name__}: {exc}"
+        else:
+            retrieval_debug = "retrieval_agent_is_none"
 
         response_data: Dict[str, Any] = {
             "query_type": "recommendation",
             "dri_preview": dri_preview,
             "evidence": evidence_passages,
         }
+        if retrieval_debug:
+            response_data["_retrieval_debug"] = retrieval_debug
 
         if downgraded_from_therapy:
             response_data["therapy_upgrade_note"] = _THERAPY_UPGRADE_NOTE
